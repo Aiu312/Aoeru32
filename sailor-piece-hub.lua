@@ -1,4 +1,4 @@
--- Sailor Piece Hub | v45
+-- Sailor Piece Hub | v46
 -- Rayfield через HttpGet; хаб использует Luau (continue). Если всё серым — см. Developer Console F9.
 --
 -- ► Лоадер с GitHub: при необходимости подставь raw URL ниже только в ЛОКАЛЬНОЙ копии или в маленьком лоадере.
@@ -82,6 +82,7 @@ local UIS = game:GetService("UserInputService")
 local VIM = game:GetService("VirtualInputManager")
 local TweenService = game:GetService("TweenService")
 local GuiService = game:GetService("GuiService")
+local CollectionService = game:GetService("CollectionService")
 local lp = Players.LocalPlayer
 
 local npcPositions = {
@@ -1681,7 +1682,29 @@ function Impl.swordTierFromUiName(name)
     -- Starter / shop naming that does not include "katana"
     if string.find(low,"wooden",1,true) and string.find(low,"sword",1,true) then return 1 end
     if string.find(low,"starter",1,true) and string.find(low,"sword",1,true) then return 1 end
+    if string.find(low,"broken",1,true) then return 0 end
+    if string.find(low,"sword",1,true) then return 1 end
+    if string.find(low,"cutlass",1,true) or string.find(low,"saber",1,true)
+        or string.find(low,"sabre",1,true) or string.find(low,"scimitar",1,true)
+        or string.find(low,"rapier",1,true) or string.find(low,"katana+",1,true)
+        or string.find(low,"nodachi",1,true) then return 1 end
+    if string.find(low,"blade",1,true) then return 1 end
     return 0
+end
+
+-- По экземпляру Tool: имя + теги игры (часто название без Katana/Gryphon).
+function Impl.toolSwordTier(tool)
+    if not tool or not tool:IsA("Tool") then return 0 end
+    local tr=Impl.swordTierFromUiName(tool.Name)
+    if tr>0 then return tr end
+    pcall(function()
+        if CollectionService:HasTag(tool,"Sword") or CollectionService:HasTag(tool,"Weapon")
+            or CollectionService:HasTag(tool,"Melee") or CollectionService:HasTag(tool,"MeleeWeapon")
+            or CollectionService:HasTag(tool,"Bladed") then
+            tr=math.max(tr,1)
+        end
+    end)
+    return tr
 end
 
 function Impl.getInventoryPanelStorage()
@@ -1722,7 +1745,7 @@ function Impl.getOwnedSwordTier()
         local function walk(inst)
             for _,t in ipairs(inst:GetChildren()) do
                 if t:IsA("Tool") then
-                    local tr=Impl.swordTierFromUiName(t.Name)
+                    local tr=Impl.toolSwordTier(t)
                     if tr>0 then best=math.max(best,tr) end
                 elseif t:IsA("Folder") or t:IsA("Model") then
                     walk(t)
@@ -1733,6 +1756,7 @@ function Impl.getOwnedSwordTier()
     end
     scanTools(lp:FindFirstChild("Backpack"))
     scanTools(lp.Character)
+    scanTools(lp:FindFirstChild("StarterGear"))
     best=Impl.scanInventoryStorageForSwordTier(Impl.getInventoryPanelStorage(),best)
     return best
 end
@@ -1762,9 +1786,8 @@ function Impl.debugSwordEquipSnapshot(tag)
             for _,ch in ipairs(inst:GetChildren()) do
                 if ch:IsA("Tool") then
                     n=n+1
-                    local tr=Impl.swordTierFromUiName(ch.Name)
                     local par=ch.Parent and ch.Parent.Name or "?"
-                    print("[SailorHub SwordDebug]   Tool["..where.."] name="..ch.Name.." tier="..tostring(tr).." parent="..par)
+                    print("[SailorHub SwordDebug]   Tool["..where.."] name="..ch.Name.." tier="..tostring(Impl.toolSwordTier(ch)).." parent="..par)
                 elseif ch:IsA("Folder") or ch:IsA("Model") then
                     walk(ch)
                 end
@@ -1779,7 +1802,7 @@ function Impl.debugSwordEquipSnapshot(tag)
         print("[SailorHub SwordDebug] Character tools:")
         for _,t in ipairs(ch:GetChildren()) do
             if t:IsA("Tool") then
-                print("[SailorHub SwordDebug]   onChar name="..t.Name.." tier="..tostring(Impl.swordTierFromUiName(t.Name)))
+                print("[SailorHub SwordDebug]   onChar name="..t.Name.." tier="..tostring(Impl.toolSwordTier(t)))
             end
         end
     else
@@ -1907,9 +1930,12 @@ function Impl.resetHandsForSwordEquip()
     task.wait(0.1)
 end
 
--- Сначала без сброса рук (часто мешает), затем ForceWeaponCleanup, затем Combat+Unequip.
-function Impl.applySwordEquipPhases(tool,wantTierMin)
+-- Сначала без сброса рук; агрессивные фазы (Cleanup / Combat+Unequip) только при options.aggressive~=false
+-- Периодический auto progress вызывает с aggressive=false, чтобы не снимать меч с рук игрока.
+function Impl.applySwordEquipPhases(tool,wantTierMin,options)
     wantTierMin=wantTierMin or 1
+    options=options or {}
+    local aggressive=options.aggressive~=false
     if not tool then return false end
     local function pulse()
         local char=lp.Character
@@ -1937,6 +1963,7 @@ function Impl.applySwordEquipPhases(tool,wantTierMin)
         return Impl.characterHasSwordEquipped(wantTierMin)
     end
     if pulse() then return true end
+    if not aggressive then return false end
     Impl.tryForceWeaponCleanupRemote()
     task.wait(0.15)
     if pulse() then return true end
@@ -1953,7 +1980,7 @@ function Impl.collectSwordToolsFromBackpack()
     local function walk(inst)
         for _,t in ipairs(inst:GetChildren()) do
             if t:IsA("Tool") then
-                local tr=Impl.swordTierFromUiName(t.Name)
+                local tr=Impl.toolSwordTier(t)
                 if tr>0 then rows[#rows+1]={tool=t,tier=tr} end
             elseif t:IsA("Folder") or t:IsA("Model") then
                 walk(t)
@@ -1961,32 +1988,42 @@ function Impl.collectSwordToolsFromBackpack()
         end
     end
     walk(bp)
+    local sg=lp:FindFirstChild("StarterGear")
+    if sg then walk(sg) end
     table.sort(rows,function(a,b) return a.tier>b.tier end)
     return rows
 end
 
+-- Лучший меч среди персонажа + рюкзака (только BP ломало ручной экип: в руках топ, в BP слабее — скрипт снимал всё).
 function Impl.equipBestOwnedSword()
     local char=lp.Character
     local hum=char and char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health<=0 then return end
     local bp=lp:FindFirstChild("Backpack")
     local best,bestTier=nil,0
+    local function considerTool(t)
+        if not t or not t:IsA("Tool") then return end
+        local tr=Impl.toolSwordTier(t)
+        if tr>bestTier then bestTier,best=tr,t end
+    end
     local function scanBp(inst)
         if not inst then return end
         for _,t in ipairs(inst:GetChildren()) do
-            if t:IsA("Tool") then
-                local tr=Impl.swordTierFromUiName(t.Name)
-                if tr>bestTier then bestTier,best=tr,t end
-            elseif t:IsA("Folder") or t:IsA("Model") then
-                scanBp(t)
-            end
+            if t:IsA("Tool") then considerTool(t)
+            elseif t:IsA("Folder") or t:IsA("Model") then scanBp(t) end
         end
     end
+    for _,t in ipairs(char:GetChildren()) do considerTool(t) end
     scanBp(bp)
+    local sg=lp:FindFirstChild("StarterGear")
+    if sg then scanBp(sg) end
     if not best or bestTier<=0 then return end
+    if best.Parent==char then return end
+    local equippedBest=0
     for _,t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") and t.Name==best.Name then return end
+        if t:IsA("Tool") then equippedBest=math.max(equippedBest,Impl.toolSwordTier(t)) end
     end
+    if bestTier<=equippedBest and equippedBest>=1 then return end
     Impl.applySwordEquipPhases(best,1)
 end
 
@@ -1995,7 +2032,7 @@ function Impl.characterHasSwordEquipped(minTier)
     if not char then return false end
     for _,t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") then
-            local tr=Impl.swordTierFromUiName(t.Name)
+            local tr=Impl.toolSwordTier(t)
             if tr>=minTier then return true end
         end
     end
