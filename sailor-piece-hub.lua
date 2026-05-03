@@ -1,4 +1,4 @@
--- Sailor Piece Hub | v50
+-- Sailor Piece Hub | v52
 -- Rayfield через HttpGet; хаб использует Luau (continue). Если всё серым — см. Developer Console F9.
 --
 -- ► Лоадер с GitHub: при необходимости подставь raw URL ниже только в ЛОКАЛЬНОЙ копии или в маленьком лоадере.
@@ -553,6 +553,74 @@ local DEMONITE_CORE_CF={
 -- =====================
 -- Methods on Impl: stays under Luau ~200 locals per chunk limit
 local Impl={}
+
+-- WARN считается «важным» и показывается по умолчанию (как почти ошибка).
+Impl.hubConsoleMuteWarnings=false
+Impl.hubConsoleVerboseOutput=false
+local hubConsoleParagraph=nil
+local hubConsoleLines={}
+local HUB_CONSOLE_LINE_CAP=42
+local hubConsoleListenersHooked=false
+
+local function hubConsoleTimestamp()
+    if os and type(os.date)=="function" then
+        local ok,s=pcall(os.date,"%H:%M:%S")
+        if ok and type(s)=="string" then return "["..s.."] " end
+    end
+    return ""
+end
+
+function Impl.hubConsoleAppend(text)
+    if text==nil then return end
+    local line=hubConsoleTimestamp()..string.gsub(tostring(text),"%s+"," ")
+    if #line>480 then line=string.sub(line,1,477).."…" end
+    hubConsoleLines[#hubConsoleLines+1]=line
+    while #hubConsoleLines>HUB_CONSOLE_LINE_CAP do table.remove(hubConsoleLines,1) end
+    local body=#hubConsoleLines>0 and table.concat(hubConsoleLines,"\n") or "(пусто)"
+    if hubConsoleParagraph then
+        pcall(function() hubConsoleParagraph:Set({Title="Console",Content=body}) end)
+    end
+end
+
+function Impl.hubConsoleClear()
+    hubConsoleLines={}
+    if hubConsoleParagraph then
+        pcall(function() hubConsoleParagraph:Set({Title="Console",Content="(очищено)"}) end)
+    end
+end
+
+function Impl.hubConsoleHookOutput()
+    if hubConsoleListenersHooked then return end
+    hubConsoleListenersHooked=true
+    pcall(function()
+        game:GetService("LogService").MessageOut:Connect(function(msg,typ)
+            if typ==Enum.MessageType.MessageError then
+                Impl.hubConsoleAppend("[CRIT][err] "..tostring(msg))
+                return
+            end
+            if typ==Enum.MessageType.MessageWarning and not Impl.hubConsoleMuteWarnings then
+                Impl.hubConsoleAppend("[CRIT][warn] "..tostring(msg))
+                return
+            end
+            if Impl.hubConsoleVerboseOutput then
+                if typ==Enum.MessageType.MessageInfo then
+                    Impl.hubConsoleAppend("[info] "..tostring(msg))
+                elseif typ==Enum.MessageType.MessageOutput then
+                    if #tostring(msg)<400 then Impl.hubConsoleAppend("[out] "..tostring(msg)) end
+                end
+            end
+        end)
+    end)
+    pcall(function()
+        game:GetService("ScriptContext").Error:Connect(function(msg,stackTrace)
+            local extra=""
+            if type(stackTrace)=="string" and #stackTrace>0 and #stackTrace<1200 then
+                extra="\n"..stackTrace
+            end
+            Impl.hubConsoleAppend("[CRIT][script] "..tostring(msg)..extra)
+        end)
+    end)
+end
 
 function Impl.teleportToIsland(islandName)
     local ok,err=pcall(function()
@@ -3229,6 +3297,45 @@ end
 
 -- ===================== OTHERS TAB =====================
 local OthersTab=Window:CreateTab("Others",4483362458)
+OthersTab:CreateSection("📋 Console — ошибки Output")
+local okHubPara,hubEl=pcall(function()
+    return OthersTab:CreateParagraph({
+        Title="Console",
+        Content="[CRIT] — ошибки Output (MessageError), warn (MessageWarning), ScriptContext.Error.\nОпционально подробный print/info ниже.",
+    })
+end)
+if okHubPara and hubEl~=nil then hubConsoleParagraph=hubEl end
+OthersTab:CreateToggle({
+    Name="Скрыть warn (оставить только hard errors)",
+    CurrentValue=false,
+    Flag="HubConsoleMuteWarn",
+    Callback=function(Value) Impl.hubConsoleMuteWarnings=Value end,
+})
+OthersTab:CreateToggle({
+    Name="Подробный Output (print и MessageInfo, шумно)",
+    CurrentValue=false,
+    Flag="HubConsoleVerbose",
+    Callback=function(Value) Impl.hubConsoleVerboseOutput=Value end,
+})
+OthersTab:CreateButton({
+    Name="🧹 Clear console",
+    Callback=function()
+        Impl.hubConsoleClear()
+        Rayfield:Notify({Title="Console",Content="Очищено.",Duration=1.8})
+    end,
+})
+OthersTab:CreateButton({
+    Name="🔁 Протестировать (warn в Output)",
+    Callback=function()
+        warn("[Sailor Hub Console] тест warn — по умолчанию [CRIT][warn]")
+        pcall(function() error("[Sailor Hub Console] тест через error()",2) end)
+        Impl.hubConsoleAppend("[Hub] ручная строка (видна всегда)")
+        Rayfield:Notify({Title="Console",Content="warn + ручная строка (+ error в pcall).",Duration=2.5})
+    end,
+})
+Impl.hubConsoleHookOutput()
+if hubConsoleParagraph then Impl.hubConsoleAppend("[Hub] консоль: err+warn+ScriptContext как [CRIT]; print/info — переключатель «Подробный».") end
+
 OthersTab:CreateSection("🗺️ Island Teleporter")
 local islandOptions={}
 for _,v in ipairs(allIslands) do islandOptions[#islandOptions+1]=v.label end
