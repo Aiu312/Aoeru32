@@ -1637,7 +1637,7 @@ end
 
 function Impl.getOwnedSwordTier()
     local best=0
-    local function Impl.scanTools(container)
+    local function scanTools(container)
         if not container then return end
         local function walk(inst)
             for _,t in ipairs(inst:GetChildren()) do
@@ -1651,8 +1651,8 @@ function Impl.getOwnedSwordTier()
         end
         walk(container)
     end
-    Impl.scanTools(lp:FindFirstChild("Backpack"))
-    Impl.scanTools(lp.Character)
+    scanTools(lp:FindFirstChild("Backpack"))
+    scanTools(lp.Character)
     best=Impl.scanInventoryStorageForSwordTier(Impl.getInventoryPanelStorage(),best)
     return best
 end
