@@ -1,4 +1,4 @@
--- Sailor Piece Hub | v46
+-- Sailor Piece Hub | v47
 -- Rayfield через HttpGet; хаб использует Luau (continue). Если всё серым — см. Developer Console F9.
 --
 -- ► Лоадер с GitHub: при необходимости подставь raw URL ниже только в ЛОКАЛЬНОЙ копии или в маленьком лоадере.
@@ -1355,6 +1355,13 @@ function Impl.equipCombat()
     end
 end
 
+-- Для авто-квестов/фарма: Combat в руке заменяет меч → сначала пробуем меч, затем базовый стиль только если меч не экипнулся.
+function Impl.equipFarmingLoadout()
+    Impl.equipBestOwnedSword()
+    if Impl.characterHasSwordEquipped(1) then return end
+    Impl.equipCombat()
+end
+
 function Impl.stopFly()
     flying=false
     if flyConnection then flyConnection:Disconnect() flyConnection=nil end
@@ -1698,12 +1705,23 @@ function Impl.toolSwordTier(tool)
     local tr=Impl.swordTierFromUiName(tool.Name)
     if tr>0 then return tr end
     pcall(function()
+        local wt=tostring(tool:GetAttribute("WeaponType") or ""):lower()
+        if wt:find("sword",1,true) or wt:find("blade",1,true) then tr=math.max(tr,1) end
+        if tool:GetAttribute("IsSword") or tool:GetAttribute("SwordTier")~=nil or tool:GetAttribute("Weapon")==true then
+            tr=math.max(tr,1)
+        end
         if CollectionService:HasTag(tool,"Sword") or CollectionService:HasTag(tool,"Weapon")
             or CollectionService:HasTag(tool,"Melee") or CollectionService:HasTag(tool,"MeleeWeapon")
             or CollectionService:HasTag(tool,"Bladed") then
             tr=math.max(tr,1)
         end
     end)
+    local st=tool:GetAttribute("SwordTier")
+    if type(st)=="number" and st>=1 then tr=math.max(tr,math.floor(st))
+    elseif type(st)=="string" then
+        local n=tonumber(st)
+        if n and n>=1 then tr=math.max(tr,math.floor(n)) end
+    end
     return tr
 end
 
@@ -2328,6 +2346,7 @@ task.spawn(function()
     while true do
         task.wait(styleSwitch_CD)
         if not autoStyleSwitch or not selectedStyle1 then continue end
+        if Impl.characterHasSwordEquipped(1) then continue end
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then continue end
@@ -2368,7 +2387,7 @@ task.spawn(function()
         else
             selectedMobPrefix=questInfo.mob mobFarming=true bossFarming=false
         end
-        Impl.equipCombat() lastZ=-math.huge isInteracting=false
+        Impl.equipFarmingLoadout() lastZ=-math.huge isInteracting=false
         Rayfield:Notify({Title="Farming!",Content=questInfo.mob.." — 0/"..requiredKills,Duration=2})
         while autoQuestEnabled and not killCountReached and not forceQuestChange do
             task.wait(0.2)
@@ -2386,7 +2405,7 @@ task.spawn(function()
                 task.wait(1.5)
                 if forceQuestChange then break end
                 if mobIsland then Impl.teleportToIsland(mobIsland) end
-                Impl.equipCombat() lastZ=-math.huge
+                Impl.equipFarmingLoadout() lastZ=-math.huge
                 local savedCount=killCount
                 Impl.startKillTracking(questInfo.mob)
                 killCount=savedCount
@@ -2451,7 +2470,7 @@ task.spawn(function()
             if target then
                 worldBossTargetName=boss.name
                 worldBossFarming=true mobFarming=false bossFarming=false
-                Impl.equipCombat() lastZ=-math.huge
+                Impl.equipFarmingLoadout() lastZ=-math.huge
                 isInteracting=false
                 Rayfield:Notify({Title="Found!",Content=boss.name.." — attacking",Duration=2})
 
@@ -2481,7 +2500,7 @@ task.spawn(function()
                             Impl.breakVelocity()
                             task.wait(0.25)
                         end
-                        Impl.equipCombat()
+                        Impl.equipFarmingLoadout()
                         lastZ=-math.huge
                         missCount=0
                         continue
@@ -2674,7 +2693,7 @@ MobTab:CreateToggle({
                     Rayfield:Notify({Title="Teleporting",Content=island.."...",Duration=2})
                     Impl.teleportToIsland(island)
                 end
-                mobFarming=true Impl.equipCombat() lastZ=-math.huge
+                mobFarming=true Impl.equipFarmingLoadout() lastZ=-math.huge
                 Rayfield:Notify({Title="Mob Farm ON",Content=selectedMobPrefix,Duration=2})
             end)
         else
@@ -2750,7 +2769,7 @@ BossTab:CreateToggle({
                     Rayfield:Notify({Title="Teleporting",Content=island.."...",Duration=2})
                     Impl.teleportToIsland(island)
                 end
-                bossFarming=true Impl.equipCombat() lastZ=-math.huge
+                bossFarming=true Impl.equipFarmingLoadout() lastZ=-math.huge
                 Rayfield:Notify({Title="Boss Farm ON",Content=selectedBossPrefix,Duration=2})
             end)
         else
