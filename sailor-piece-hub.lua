@@ -546,7 +546,10 @@ local DEMONITE_CORE_CF={
 -- =====================
 --   TELEPORT TO ISLAND — portal (for auto quest/farm)
 -- =====================
-local function teleportToIsland(islandName)
+-- Methods on Impl: stays under Luau ~200 locals per chunk limit
+local Impl={}
+
+function Impl.teleportToIsland(islandName)
     local ok,err=pcall(function()
         local rs=game:GetService("ReplicatedStorage")
         local remote=rs.Remotes.TeleportToPortal
@@ -559,7 +562,7 @@ end
 -- =====================
 --   TWEEN to NPC (speed + hang + no collision during move)
 -- =====================
-local function restoreCharacterCollision(saved)
+function Impl.restoreCharacterCollision(saved)
     if not saved then return end
     for part,wasCollide in pairs(saved) do
         pcall(function()
@@ -568,7 +571,7 @@ local function restoreCharacterCollision(saved)
     end
 end
 
-local function snapshotAndDisableCharacterCollision(char)
+function Impl.snapshotAndDisableCharacterCollision(char)
     local saved={}
     for _,inst in ipairs(char:GetDescendants()) do
         if inst:IsA("BasePart") then
@@ -579,13 +582,13 @@ local function snapshotAndDisableCharacterCollision(char)
     return saved
 end
 
-local function pressDashKeyboard()
+function Impl.pressDashKeyboard()
     VIM:SendKeyEvent(true,DASH_KEY_AFTER_ARRIVE,false,game)
     task.wait(0.06)
     VIM:SendKeyEvent(false,DASH_KEY_AFTER_ARRIVE,false,game)
 end
 
-local function pressDashHudTap()
+function Impl.pressDashHudTap()
     local cam=workspace.CurrentCamera
     if not cam then return end
     local v=cam.ViewportSize
@@ -597,22 +600,22 @@ local function pressDashHudTap()
     VIM:SendMouseButtonEvent(x,y,0,false,game,1)
 end
 
-local function triggerDashOnceAfterArrival()
-    pcall(pressDashKeyboard)
+function Impl.triggerDashOnceAfterArrival()
+    pcall(Impl.pressDashKeyboard)
     local mobileLike=UIS.TouchEnabled and not UIS.KeyboardEnabled
     local alsoTap=DASH_FORCE_HUD_TAP_ON_TOUCH and UIS.TouchEnabled
     if mobileLike or alsoTap then
-        pcall(pressDashHudTap)
+        pcall(Impl.pressDashHudTap)
     end
 end
 
-local function tweenToPosition(targetCFrame)
+function Impl.tweenToPosition(targetCFrame)
     local char=lp.Character
     local hrp=char and char:FindFirstChild("HumanoidRootPart")
     local hum=char and char:FindFirstChildOfClass("Humanoid")
     if not hrp or not hum then return end
 
-    local savedCollision=snapshotAndDisableCharacterCollision(char)
+    local savedCollision=Impl.snapshotAndDisableCharacterCollision(char)
     hrp.AssemblyLinearVelocity=Vector3.zero
     hrp.AssemblyAngularVelocity=Vector3.zero
 
@@ -628,7 +631,7 @@ local function tweenToPosition(targetCFrame)
         tween.Completed:Wait()
         -- Mid-air: one dash attempt (Q and/or HUD tap on touch).
         if hrp.Parent then
-            triggerDashOnceAfterArrival()
+            Impl.triggerDashOnceAfterArrival()
             -- Hold arrival pose for TWEEN_NPC_HANG_SECONDS (pin CFrame + zero velocity).
             local untilT=tick()+TWEEN_NPC_HANG_SECONDS
             while tick()<untilT do
@@ -643,27 +646,27 @@ local function tweenToPosition(targetCFrame)
     end)
 
     pcall(function() hum.PlatformStand=false end)
-    restoreCharacterCollision(savedCollision)
+    Impl.restoreCharacterCollision(savedCollision)
 end
 
-local function tweenToNPC(npcName)
+function Impl.tweenToNPC(npcName)
     local pos=npcPositions[npcName]
     if not pos then return false end
-    tweenToPosition(CFrame.new(pos+Vector3.new(0,TWEEN_NPC_EXTRA_HEIGHT_STUDS,3)))
+    Impl.tweenToPosition(CFrame.new(pos+Vector3.new(0,TWEEN_NPC_EXTRA_HEIGHT_STUDS,3)))
     return true
 end
 
-local function tweenToQuestNPCSimple(npcName)
+function Impl.tweenToQuestNPCSimple(npcName)
     local pos=npcPositions[npcName]
     if not pos then return false end
-    tweenToPosition(CFrame.new(pos+Vector3.new(0,0,3)))
+    Impl.tweenToPosition(CFrame.new(pos+Vector3.new(0,0,3)))
     return true
 end
 
 local fireproximityprompt_exploit=nil
 pcall(function() fireproximityprompt_exploit=fireproximityprompt end)
 
-local function fireProximityPromptCompat(pp)
+function Impl.fireProximityPromptCompat(pp)
     if not pp or not pp:IsA("ProximityPrompt") then return end
     local hold=pp.HoldDuration
     pp.HoldDuration=0
@@ -679,11 +682,11 @@ local function fireProximityPromptCompat(pp)
     pp.HoldDuration=hold
 end
 
--- Collect targets: same base as tweenToNPC(), then nudge toward dumped anchor (fixes small undershoot).
+-- Collect targets: same base as Impl.tweenToNPC(), then nudge toward dumped anchor (fixes small undershoot).
 local SPECIAL_COLLECT_EXTRA_Y_STUDS=-1
 local SPECIAL_COLLECT_CLOSER_XZ_STUDS=7
 
-local function findHogyokuPrompt(index)
+function Impl.findHogyokuPrompt(index)
     local name="HogyokuFragment"..tostring(index)
     local inst=workspace:FindFirstChild(name,true)
     if not inst then return nil end
@@ -692,7 +695,7 @@ local function findHogyokuPrompt(index)
     return nil
 end
 
-local function findDemonitePrompt(index)
+function Impl.findDemonitePrompt(index)
     local name="DemoniteCore"..tostring(index)
     local inst=workspace:FindFirstChild(name,true)
     if not inst then return nil end
@@ -701,38 +704,38 @@ local function findDemonitePrompt(index)
     return nil
 end
 
-local function firePromptRepeat(pp,times)
+function Impl.firePromptRepeat(pp,times)
     if not pp then return end
     for _=1,times or 4 do
-        fireProximityPromptCompat(pp)
+        Impl.fireProximityPromptCompat(pp)
         task.wait(0.22)
     end
 end
 
 local SPECIAL_COLLECT_VERIFY_ATTEMPTS=3
 
-local function tweenAndAcceptNpcQuest(npcKey)
+function Impl.tweenAndAcceptNpcQuest(npcKey)
     local isl=islandMap[npcKey]
     if isl then
-        teleportToIsland(isl)
+        Impl.teleportToIsland(isl)
         task.wait(0.55)
     end
-    if not tweenToQuestNPCSimple(npcKey) then return false end
+    if not Impl.tweenToQuestNPCSimple(npcKey) then return false end
     task.wait(0.3)
-    local npcHrp=findNPCHRP(npcKey)
+    local npcHrp=Impl.findNPCHRP(npcKey)
     local npcModel=npcHrp and npcHrp.Parent
     if not npcModel then return false end
     local prompted=false
     for _,desc in ipairs(npcModel:GetDescendants()) do
         if desc:IsA("ProximityPrompt") then
-            fireProximityPromptCompat(desc)
+            Impl.fireProximityPromptCompat(desc)
             prompted=true
             task.wait(0.15)
             break
         end
     end
     if not prompted then
-        pressE()
+        Impl.pressE()
         task.wait(0.15)
     end
     task.wait(0.2)
@@ -744,7 +747,7 @@ end
 local SPECIAL_VERIFY_PROMPT_DISTANCE_SLACK_STUDS=14
 local SPECIAL_VERIFY_ANCHOR_SUCCESS_RADIUS_STUDS=38
 
-local function verifySpecialCollectAfterFire(index,findPrompt,anchorWorldPos)
+function Impl.verifySpecialCollectAfterFire(index,findPrompt,anchorWorldPos)
     for _s=1,18 do
         task.wait(0.08)
         local now=findPrompt(index)
@@ -779,7 +782,7 @@ local function verifySpecialCollectAfterFire(index,findPrompt,anchorWorldPos)
 end
 
 -- NPC-style offset first, then slide on XZ toward anchor (only Position from dump is used).
-local function tweenToSpecialCollect(worldCf)
+function Impl.tweenToSpecialCollect(worldCf)
     local anchor=worldCf.Position
     local p=anchor+Vector3.new(
         0,
@@ -790,28 +793,28 @@ local function tweenToSpecialCollect(worldCf)
     if xz.Magnitude>0.05 and SPECIAL_COLLECT_CLOSER_XZ_STUDS~=0 then
         p=p+xz.Unit*math.min(SPECIAL_COLLECT_CLOSER_XZ_STUDS,xz.Magnitude)
     end
-    tweenToPosition(CFrame.new(p))
+    Impl.tweenToPosition(CFrame.new(p))
 end
 
 -- "collected" | "skipped" (no fragment in world) | "fail"
-local function collectHogyokuFragmentIndex(index)
+function Impl.collectHogyokuFragmentIndex(index)
     local fragmentCf=HOGYOKU_FRAGMENT_CF[index]
     if not fragmentCf then return "fail" end
     local fragName="HogyokuFragment"..tostring(index)
     for verifyTry=1,SPECIAL_COLLECT_VERIFY_ATTEMPTS do
-        tweenToSpecialCollect(fragmentCf)
+        Impl.tweenToSpecialCollect(fragmentCf)
         task.wait(0.45)
         if workspace:FindFirstChild(fragName,true)==nil then
             return "skipped"
         end
-        local pp=findHogyokuPrompt(index)
+        local pp=Impl.findHogyokuPrompt(index)
         if not pp then
             if verifyTry<SPECIAL_COLLECT_VERIFY_ATTEMPTS then task.wait(0.35) continue end
             warn("HogyokuFragment"..index.." or HogyokuCollectPrompt missing after tween.")
             return "fail"
         end
-        firePromptRepeat(pp,6)
-        if verifySpecialCollectAfterFire(index,findHogyokuPrompt,fragmentCf.Position) then
+        Impl.firePromptRepeat(pp,6)
+        if Impl.verifySpecialCollectAfterFire(index,findHogyokuPrompt,fragmentCf.Position) then
             return "collected"
         end
         if verifyTry<SPECIAL_COLLECT_VERIFY_ATTEMPTS then task.wait(0.4) end
@@ -819,24 +822,24 @@ local function collectHogyokuFragmentIndex(index)
     return "fail"
 end
 
-local function collectDemoniteCoreIndex(index)
+function Impl.collectDemoniteCoreIndex(index)
     local coreCf=DEMONITE_CORE_CF[index]
     if not coreCf then return "fail" end
     local coreName="DemoniteCore"..tostring(index)
     for verifyTry=1,SPECIAL_COLLECT_VERIFY_ATTEMPTS do
-        tweenToSpecialCollect(coreCf)
+        Impl.tweenToSpecialCollect(coreCf)
         task.wait(0.45)
         if workspace:FindFirstChild(coreName,true)==nil then
             return "skipped"
         end
-        local pp=findDemonitePrompt(index)
+        local pp=Impl.findDemonitePrompt(index)
         if not pp then
             if verifyTry<SPECIAL_COLLECT_VERIFY_ATTEMPTS then task.wait(0.35) continue end
             warn("DemoniteCore"..index.." or DemoniteCollectPrompt missing after tween.")
             return "fail"
         end
-        firePromptRepeat(pp,6)
-        if verifySpecialCollectAfterFire(index,findDemonitePrompt,coreCf.Position) then
+        Impl.firePromptRepeat(pp,6)
+        if Impl.verifySpecialCollectAfterFire(index,findDemonitePrompt,coreCf.Position) then
             return "collected"
         end
         if verifyTry<SPECIAL_COLLECT_VERIFY_ATTEMPTS then task.wait(0.4) end
@@ -844,7 +847,7 @@ local function collectDemoniteCoreIndex(index)
     return "fail"
 end
 
-local function runAutoHogyokuCollect()
+function Impl.runAutoHogyokuCollect()
     task.spawn(function()
         if isInteracting then
             Rayfield:Notify({Title="Busy",Content="Wait for the current action.",Duration=2})
@@ -853,7 +856,7 @@ local function runAutoHogyokuCollect()
         isInteracting=true
         floorHiding=false floorHidePivot=nil
         Rayfield:Notify({Title="Hogyoku",Content="Quest NPC → fragments",Duration=2})
-        if not tweenAndAcceptNpcQuest("HogyokuQuestNPC") then
+        if not Impl.tweenAndAcceptNpcQuest("HogyokuQuestNPC") then
             Rayfield:Notify({Title="Hogyoku",Content="Quest NPC failed.",Duration=3})
             isInteracting=false
             return
@@ -862,7 +865,7 @@ local function runAutoHogyokuCollect()
         local collected,skipped,failures=0,0,0
         for i=1,6 do
             if not lp.Character or not lp.Character:FindFirstChild("HumanoidRootPart") then break end
-            local st=collectHogyokuFragmentIndex(i)
+            local st=Impl.collectHogyokuFragmentIndex(i)
             local text="retry"
             if st=="collected" then text="OK" collected=collected+1
             elseif st=="skipped" then text="skipped" skipped=skipped+1
@@ -880,7 +883,7 @@ local function runAutoHogyokuCollect()
     end)
 end
 
-local function runAutoDemoniteCollect()
+function Impl.runAutoDemoniteCollect()
     task.spawn(function()
         if isInteracting then
             Rayfield:Notify({Title="Busy",Content="Wait for the current action.",Duration=2})
@@ -889,9 +892,9 @@ local function runAutoDemoniteCollect()
         isInteracting=true
         floorHiding=false floorHidePivot=nil
         Rayfield:Notify({Title="Demonite",Content="NPC quest (Academy portal)",Duration=2})
-        teleportToIsland("Academy")
+        Impl.teleportToIsland("Academy")
         task.wait(0.58)
-        if not tweenAndAcceptNpcQuest("AnosQuestNPC") then
+        if not Impl.tweenAndAcceptNpcQuest("AnosQuestNPC") then
             Rayfield:Notify({Title="Demonite",Content="AnosQuestNPC failed — try manually.",Duration=3})
             isInteracting=false
             return
@@ -900,7 +903,7 @@ local function runAutoDemoniteCollect()
         local collected,skipped,failures=0,0,0
         for idx=1,2 do
             if not lp.Character or not lp.Character:FindFirstChild("HumanoidRootPart") then break end
-            local st=collectDemoniteCoreIndex(idx)
+            local st=Impl.collectDemoniteCoreIndex(idx)
             local text=""
             if st=="collected" then text="OK" collected=collected+1
             elseif st=="skipped" then text="skipped" skipped=skipped+1
@@ -921,7 +924,7 @@ end
 -- =====================
 --   FLOOR HIDE
 -- =====================
-local function breakVelocity()
+function Impl.breakVelocity()
     local char=lp.Character
     if not char then return end
     local hrp=char:FindFirstChild("HumanoidRootPart")
@@ -944,14 +947,14 @@ coroutine.resume(coroutine.create(function()
             floorHidePivot.Position-Vector3.yAxis*4,
             floorHidePivot.Position
         ))
-        breakVelocity()
+        Impl.breakVelocity()
     end
 end))
 
 -- =====================
 --   FIND NPC
 -- =====================
-local function findNPCHRP(npcName)
+function Impl.findNPCHRP(npcName)
     for _,obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name==npcName then
             local hrp=obj:FindFirstChild("HumanoidRootPart")
@@ -969,12 +972,12 @@ end
 -- =====================
 --   SCANNER
 -- =====================
-local function cleanText(t)
+function Impl.cleanText(t)
     if not t then return "?" end
     return t:gsub("<[^>]+>",""):match("^%s*(.-)%s*$")
 end
 
-local function scanSkills()
+function Impl.scanSkills()
     local skills={}
     local pg=lp:FindFirstChild("PlayerGui")
     if not pg then return skills end
@@ -990,7 +993,7 @@ local function scanSkills()
             local kl=h:FindFirstChild("SkillKeybind")
             if nl and kl then
                 local key=(kl.Text:match("%[(.-)%]") or kl.Text):match("^%s*(.-)%s*$")
-                local raw=cleanText(nl.Text)
+                local raw=Impl.cleanText(nl.Text)
                 local name=(raw:match("^(.-)%s*%-") or raw):match("^%s*(.-)%s*$")
                 if key~="" then skills[#skills+1]={key=key,name=name} end
             end
@@ -999,7 +1002,7 @@ local function scanSkills()
     return skills
 end
 
-local function scanTools()
+function Impl.scanTools()
     local tools={}
     local char=lp.Character
     if char then
@@ -1013,7 +1016,7 @@ local function scanTools()
     return tools
 end
 
-local function getHotbarSnapshot()
+function Impl.getHotbarSnapshot()
     local p={} local char=lp.Character
     if char then
         for _,t in ipairs(char:GetChildren()) do
@@ -1024,8 +1027,8 @@ local function getHotbarSnapshot()
     table.sort(p) return table.concat(p,",")
 end
 
-local function getSkillSnapshot()
-    local skills=scanSkills() local p={}
+function Impl.getSkillSnapshot()
+    local skills=Impl.scanSkills() local p={}
     for _,s in ipairs(skills) do p[#p+1]=s.key..":"..s.name end
     return table.concat(p,",")
 end
@@ -1033,10 +1036,10 @@ end
 task.spawn(function()
     while true do
         task.wait(1)
-        local hs=getHotbarSnapshot()
-        if hs~=lastHotbarSnapshot then lastHotbarSnapshot=hs currentTools=scanTools() end
-        local ss=getSkillSnapshot()
-        if ss~=lastSkillSnapshot then lastSkillSnapshot=ss currentSkills=scanSkills() end
+        local hs=Impl.getHotbarSnapshot()
+        if hs~=lastHotbarSnapshot then lastHotbarSnapshot=hs currentTools=Impl.scanTools() end
+        local ss=Impl.getSkillSnapshot()
+        if ss~=lastSkillSnapshot then lastSkillSnapshot=ss currentSkills=Impl.scanSkills() end
     end
 end)
 
@@ -1075,7 +1078,7 @@ end)
 -- =====================
 --   FARMING GUI
 -- =====================
-local function createFarmingGUI()
+function Impl.createFarmingGUI()
     local existing=lp.PlayerGui:FindFirstChild("FarmingHub")
     if existing then existing:Destroy() end
     local sg=Instance.new("ScreenGui")
@@ -1144,7 +1147,7 @@ local function createFarmingGUI()
     skillFrame.BackgroundTransparency=1 skillFrame.AutomaticSize=Enum.AutomaticSize.Y
     Instance.new("UIListLayout",skillFrame).Padding=UDim.new(0,4)
     local function updateGUI()
-        local tools=scanTools() currentTools=tools
+        local tools=Impl.scanTools() currentTools=tools
         local tText=""
         for _,t in ipairs(tools) do tText=tText..(t.equipped and "★ " or "• ")..t.name.."  " end
         toolsInfoLbl.Text=tText~="" and tText or "No tools"
@@ -1173,7 +1176,7 @@ local function createFarmingGUI()
                 selectedStyle2=(selectedStyle2==t.name) and nil or t.name updateGUI()
             end)
         end
-        local skills=scanSkills() currentSkills=skills
+        local skills=Impl.scanSkills() currentSkills=skills
         local sText=""
         for _,s in ipairs(skills) do sText=sText.."["..s.key.."] "..s.name.."  " end
         skillsInfoLbl.Text=sText~="" and sText or "No skills — equip a style"
@@ -1231,7 +1234,7 @@ end
 -- =====================
 --   CORE FUNCTIONS
 -- =====================
-local function abandonQuest()
+function Impl.abandonQuest()
     local ok,err=pcall(function()
         local rs=game:GetService("ReplicatedStorage")
         local re=rs:WaitForChild("RemoteEvents",5)
@@ -1245,20 +1248,20 @@ local function abandonQuest()
     task.wait(0.3)
 end
 
-local function clearTrackedConnections()
+function Impl.clearTrackedConnections()
     for _,c in ipairs(trackedConnections) do c:Disconnect() end
     trackedConnections={}
 end
 
-local function fullReset()
+function Impl.fullReset()
     mobFarming=false bossFarming=false worldBossFarming=false floorHiding=false floorHidePivot=nil
     isInteracting=false killCount=0 killCountReached=false
     hasActiveQuest=false forceQuestChange=false
-    clearTrackedConnections()
+    Impl.clearTrackedConnections()
 end
 
-local function startKillTracking(mobPrefix)
-    clearTrackedConnections()
+function Impl.startKillTracking(mobPrefix)
+    Impl.clearTrackedConnections()
     killCount=0 killCountReached=false currentQuestMobPrefix=mobPrefix
     local pattern="^"..mobPrefix.."%d*$"
     local function hookMob(obj)
@@ -1281,7 +1284,7 @@ local function startKillTracking(mobPrefix)
     table.insert(trackedConnections,sc)
 end
 
-local function findByPrefix(prefix)
+function Impl.findByPrefix(prefix)
     local found={} local pattern="^"..prefix.."%d*$"
     for _,obj in ipairs(workspace:GetDescendants()) do
         if obj:IsA("Model") and obj.Name:match(pattern) then
@@ -1293,7 +1296,7 @@ local function findByPrefix(prefix)
     return found
 end
 
-local function findByContains(nameToken)
+function Impl.findByContains(nameToken)
     local found={}
     local token=(nameToken or ""):lower()
     if token=="" then return found end
@@ -1311,7 +1314,7 @@ local function findByContains(nameToken)
     return found
 end
 
-local function getNearest(targets,pos)
+function Impl.getNearest(targets,pos)
     local nearest,best=nil,math.huge
     for _,t in ipairs(targets) do
         if t.hum.Health>0 then
@@ -1322,7 +1325,7 @@ local function getNearest(targets,pos)
     return nearest
 end
 
-local function equipTool(toolName)
+function Impl.equipTool(toolName)
     local char=lp.Character if not char then return end
     local hum=char:FindFirstChildOfClass("Humanoid") if not hum then return end
     for _,t in ipairs(char:GetChildren()) do
@@ -1336,7 +1339,7 @@ local function equipTool(toolName)
     end
 end
 
-local function equipCombat()
+function Impl.equipCombat()
     local char=lp.Character if not char then return end
     for _,t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") and t.Name:lower():find("combat") then return end
@@ -1351,7 +1354,7 @@ local function equipCombat()
     end
 end
 
-local function stopFly()
+function Impl.stopFly()
     flying=false
     if flyConnection then flyConnection:Disconnect() flyConnection=nil end
     if bodyVelocity then bodyVelocity:Destroy() bodyVelocity=nil end
@@ -1361,34 +1364,34 @@ local function stopFly()
     if hum then hum.PlatformStand=false end
 end
 
-local function stopAll()
+function Impl.stopAll()
     autoMobQuestEnabled=false autoBossQuestEnabled=false autoQuestEnabled=false
     autoWorldBossEnabled=false worldBossFarming=false
     antiAfkRunning=false autoStyleSwitch=false
-    fullReset() stopFly()
+    Impl.fullReset() Impl.stopFly()
     local char=lp.Character
     local hum=char and char:FindFirstChildOfClass("Humanoid")
     if hum then hum.WalkSpeed=16 end
 end
 
-local function pressM1()
+function Impl.pressM1()
     VIM:SendMouseButtonEvent(0,0,0,true,game,1)
     VIM:SendMouseButtonEvent(0,0,0,false,game,1)
 end
 
-local function vimKeyE(pressed)
+function Impl.vimKeyE(pressed)
     pcall(function() VIM:SendKeyEvent(pressed,Enum.KeyCode.E,false,game) end)
     pcall(function() VIM:SendKeyEvent(pressed,Enum.KeyCode.E,false) end)
 end
 
-local function pressE()
-    vimKeyE(true)
+function Impl.pressE()
+    Impl.vimKeyE(true)
     task.wait(0.1)
-    vimKeyE(false)
+    Impl.vimKeyE(false)
 end
 
 -- acceptQuest: same flow as classic hub — first ProximityPrompt once, else single E
-local function acceptQuest()
+function Impl.acceptQuest()
     if isInteracting then return false end
     isInteracting=true floorHiding=false floorHidePivot=nil
     task.wait(0.2)
@@ -1397,30 +1400,30 @@ local function acceptQuest()
     if not hum or hum.Health<=0 then isInteracting=false return false end
     local island=islandMap[selectedQuestNPC]
     if island then
-        teleportToIsland(island)
+        Impl.teleportToIsland(island)
         task.wait(0.5)
-        local found=tweenToQuestNPCSimple(selectedQuestNPC)
+        local found=Impl.tweenToQuestNPCSimple(selectedQuestNPC)
         if not found then isInteracting=false return false end
     end
     task.wait(0.1)
     char=lp.Character
     hum=char and char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health<=0 then isInteracting=false return false end
-    local npcHRP=findNPCHRP(selectedQuestNPC)
+    local npcHRP=Impl.findNPCHRP(selectedQuestNPC)
     if not npcHRP then isInteracting=false return false end
     local npcModel=npcHRP.Parent
     local prompted=false
     if npcModel then
         for _,desc in ipairs(npcModel:GetDescendants()) do
             if desc:IsA("ProximityPrompt") then
-                fireProximityPromptCompat(desc)
+                Impl.fireProximityPromptCompat(desc)
                 prompted=true
                 task.wait(0.15)
                 break
             end
         end
     end
-    if not prompted then pressE() task.wait(0.15) end
+    if not prompted then Impl.pressE() task.wait(0.15) end
     task.wait(0.2)
     hasActiveQuest=true
     isInteracting=false
@@ -1445,7 +1448,7 @@ local MOB_QUEST_LADDER={
     {"QuestNPC19",12000},
 }
 
-local function parseNumberLoose(s)
+function Impl.parseNumberLoose(s)
     if not s or s=="" then return nil end
     local t=s:gsub(",",""):gsub("%s","")
     local lower=string.lower(t)
@@ -1457,7 +1460,7 @@ local function parseNumberLoose(s)
     return math.floor(num*mult+0.5)
 end
 
-local function readMoneyGemsHud()
+function Impl.readMoneyGemsHud()
     local pg=lp:FindFirstChild("PlayerGui")
     if not pg then return nil,nil end
     local root=pg:FindFirstChild("BasicStatsCurrencyAndButtonsUI",true)
@@ -1471,18 +1474,18 @@ local function readMoneyGemsHud()
     if moneyFrame then
         local ind=moneyFrame:FindFirstChild("MoneyIndicator",true)
         local cur=ind and ind:FindFirstChild("CurrencyIndicator",true)
-        if cur and cur:IsA("GuiObject") then coins=parseNumberLoose(cur.Text) end
+        if cur and cur:IsA("GuiObject") then coins=Impl.parseNumberLoose(cur.Text) end
     end
     local gemsFrame=mgf:FindFirstChild("GemsFrame",true)
     if gemsFrame then
         local ind=gemsFrame:FindFirstChild("GemsIndicator",true)
         local cur=ind and ind:FindFirstChild("CurrencyIndicator",true)
-        if cur and cur:IsA("GuiObject") then gems=parseNumberLoose(cur.Text) end
+        if cur and cur:IsA("GuiObject") then gems=Impl.parseNumberLoose(cur.Text) end
     end
     return coins,gems
 end
 
-local function readMoneyGemsFromLeaderstats()
+function Impl.readMoneyGemsFromLeaderstats()
     local ls=lp:FindFirstChild("leaderstats")
     if not ls then return nil,nil end
     local coins,gems=nil,nil
@@ -1518,16 +1521,16 @@ local function readMoneyGemsFromLeaderstats()
     return coins,gems
 end
 
-local function readMoneyGemsForAutoBuy()
-    local cHud,gHud=readMoneyGemsHud()
-    local cLs,gLs=readMoneyGemsFromLeaderstats()
+function Impl.readMoneyGemsForAutoBuy()
+    local cHud,gHud=Impl.readMoneyGemsHud()
+    local cLs,gLs=Impl.readMoneyGemsFromLeaderstats()
     local coins=cHud~=nil and cHud or cLs
     local gems=gHud~=nil and gHud or gLs
     if gems==nil then gems=0 end
     return coins,gems
 end
 
-local function readLevelFromHud()
+function Impl.readLevelFromHud()
     local pg=lp:FindFirstChild("PlayerGui")
     if not pg then return nil end
     local root=pg:FindFirstChild("BasicStatsCurrencyAndButtonsUI",true)
@@ -1536,7 +1539,7 @@ local function readLevelFromHud()
     local li=(mf and mf:FindFirstChild("LevelInfo",true)) or root:FindFirstChild("LevelInfo",true)
     local best=nil
     local function takeLabelText(raw)
-        local n=parseNumberLoose(raw)
+        local n=Impl.parseNumberLoose(raw)
         if n and n>=1 and n<=AUTO_PROGRESS_LEVEL_STOP+10000 then
             if not best or n>best then best=n end
         end
@@ -1561,7 +1564,7 @@ local function readLevelFromHud()
     return best
 end
 
-local function readLevelFromLeaderstats()
+function Impl.readLevelFromLeaderstats()
     local ls=lp:FindFirstChild("leaderstats")
     if not ls then return nil end
     local tryNames={"Level","Lvl","LV","LEVEL","level","Rank"}
@@ -1584,11 +1587,11 @@ local function readLevelFromLeaderstats()
     return nil
 end
 
-local function readLevelForAutoProgress()
-    return readLevelFromHud() or readLevelFromLeaderstats()
+function Impl.readLevelForAutoProgress()
+    return Impl.readLevelFromHud() or Impl.readLevelFromLeaderstats()
 end
 
-local function swordTierFromUiName(name)
+function Impl.swordTierFromUiName(name)
     if not name or name=="" then return 0 end
     local low=string.lower(name)
     if string.find(low,"gryphon",1,true) then return 3 end
@@ -1601,7 +1604,7 @@ local function swordTierFromUiName(name)
     return 0
 end
 
-local function getInventoryPanelStorage()
+function Impl.getInventoryPanelStorage()
     local pg=lp:FindFirstChild("PlayerGui")
     if not pg then return nil end
     local inv=pg:FindFirstChild("InventoryPanelUI") or pg:FindFirstChild("InventoryPanelUI",true)
@@ -1616,15 +1619,15 @@ local function getInventoryPanelStorage()
     return inv:FindFirstChild("Storage",true)
 end
 
-local function scanInventoryStorageForSwordTier(storage,best)
+function Impl.scanInventoryStorageForSwordTier(storage,best)
     if not storage then return best end
     for _,ch in ipairs(storage:GetChildren()) do
         if string.sub(ch.Name,1,5)~="Item_" then continue end
-        local t=swordTierFromUiName(ch.Name)
+        local t=Impl.swordTierFromUiName(ch.Name)
         if t>0 then best=math.max(best,t) end
         for _,d in ipairs(ch:GetDescendants()) do
             if d:IsA("TextLabel") or d:IsA("TextButton") then
-                local tt=swordTierFromUiName(d.Text)
+                local tt=Impl.swordTierFromUiName(d.Text)
                 if tt>0 then best=math.max(best,tt) end
             end
         end
@@ -1632,14 +1635,14 @@ local function scanInventoryStorageForSwordTier(storage,best)
     return best
 end
 
-local function getOwnedSwordTier()
+function Impl.getOwnedSwordTier()
     local best=0
-    local function scanTools(container)
+    local function Impl.scanTools(container)
         if not container then return end
         local function walk(inst)
             for _,t in ipairs(inst:GetChildren()) do
                 if t:IsA("Tool") then
-                    local tr=swordTierFromUiName(t.Name)
+                    local tr=Impl.swordTierFromUiName(t.Name)
                     if tr>0 then best=math.max(best,tr) end
                 elseif t:IsA("Folder") or t:IsA("Model") then
                     walk(t)
@@ -1648,13 +1651,13 @@ local function getOwnedSwordTier()
         end
         walk(container)
     end
-    scanTools(lp:FindFirstChild("Backpack"))
-    scanTools(lp.Character)
-    best=scanInventoryStorageForSwordTier(getInventoryPanelStorage(),best)
+    Impl.scanTools(lp:FindFirstChild("Backpack"))
+    Impl.scanTools(lp.Character)
+    best=Impl.scanInventoryStorageForSwordTier(Impl.getInventoryPanelStorage(),best)
     return best
 end
 
-local function resolveChildChain(root,segments)
+function Impl.resolveChildChain(root,segments)
     local cur=root
     for _,seg in ipairs(segments) do
         cur=cur and cur:FindFirstChild(seg)
@@ -1662,13 +1665,13 @@ local function resolveChildChain(root,segments)
     return cur
 end
 
-local function debugSwordEquipSnapshot(tag)
+function Impl.debugSwordEquipSnapshot(tag)
     if not DEBUG_SWORD_EQUIP then return end
     print("[SailorHub SwordDebug] ---------- "..tostring(tag).." ----------")
     print("[SailorHub SwordDebug] PlaceId="..tostring(game.PlaceId))
-    local r=getSwordEquipRemote()
+    local r=Impl.getSwordEquipRemote()
     print("[SailorHub SwordDebug] EquipWeapon="..(r and r:GetFullName() or "nil"))
-    print("[SailorHub SwordDebug] getOwnedSwordTier()="..tostring(getOwnedSwordTier()))
+    print("[SailorHub SwordDebug] Impl.getOwnedSwordTier()="..tostring(Impl.getOwnedSwordTier()))
     local function dumpTools(where,container)
         if not container then
             print("[SailorHub SwordDebug] "..where..": (no container)")
@@ -1679,7 +1682,7 @@ local function debugSwordEquipSnapshot(tag)
             for _,ch in ipairs(inst:GetChildren()) do
                 if ch:IsA("Tool") then
                     n=n+1
-                    local tr=swordTierFromUiName(ch.Name)
+                    local tr=Impl.swordTierFromUiName(ch.Name)
                     local par=ch.Parent and ch.Parent.Name or "?"
                     print("[SailorHub SwordDebug]   Tool["..where.."] name="..ch.Name.." tier="..tostring(tr).." parent="..par)
                 elseif ch:IsA("Folder") or ch:IsA("Model") then
@@ -1696,7 +1699,7 @@ local function debugSwordEquipSnapshot(tag)
         print("[SailorHub SwordDebug] Character tools:")
         for _,t in ipairs(ch:GetChildren()) do
             if t:IsA("Tool") then
-                print("[SailorHub SwordDebug]   onChar name="..t.Name.." tier="..tostring(swordTierFromUiName(t.Name)))
+                print("[SailorHub SwordDebug]   onChar name="..t.Name.." tier="..tostring(Impl.swordTierFromUiName(t.Name)))
             end
         end
     else
@@ -1705,9 +1708,9 @@ local function debugSwordEquipSnapshot(tag)
     print("[SailorHub SwordDebug] ---------- end ----------")
 end
 
-local function getSwordEquipRemote()
+function Impl.getSwordEquipRemote()
     if type(SWORD_EQUIP_REMOTE_PATH)=="table" then
-        local r=resolveChildChain(game,SWORD_EQUIP_REMOTE_PATH)
+        local r=Impl.resolveChildChain(game,SWORD_EQUIP_REMOTE_PATH)
         if r and (r:IsA("RemoteEvent") or r:IsA("RemoteFunction")) then return r end
     end
     local rs=game:GetService("ReplicatedStorage")
@@ -1725,8 +1728,8 @@ local function getSwordEquipRemote()
 end
 
 -- Sailor-style: "Combat" через ремоут; мечи часто требуют несколько вызовов EquipWeapon + клиентский EquipTool + UpdateEquipped (см. Remotes.UpdateEquipped в игре).
-local function tryEquipCombatViaRemote()
-    local r=getSwordEquipRemote()
+function Impl.tryEquipCombatViaRemote()
+    local r=Impl.getSwordEquipRemote()
     if not r then return end
     pcall(function()
         if r:IsA("RemoteEvent") then r:FireServer("Equip","Combat")
@@ -1734,7 +1737,7 @@ local function tryEquipCombatViaRemote()
     end)
 end
 
-local function tryAuxWeaponRemotesAfterEquip()
+function Impl.tryAuxWeaponRemotesAfterEquip()
     pcall(function()
         local rem=game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
         if not rem then return end
@@ -1743,7 +1746,7 @@ local function tryAuxWeaponRemotesAfterEquip()
     end)
 end
 
-local function tryForceWeaponCleanupRemote()
+function Impl.tryForceWeaponCleanupRemote()
     pcall(function()
         local rem=game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
         local fc=rem and rem:FindFirstChild("ForceWeaponCleanup")
@@ -1751,9 +1754,9 @@ local function tryForceWeaponCleanupRemote()
     end)
 end
 
-local function trySwordEquipRemote(tool)
+function Impl.trySwordEquipRemote(tool)
     if not tool then return end
-    local r=getSwordEquipRemote()
+    local r=Impl.getSwordEquipRemote()
     if not r then return end
     local nm=tool.Name
     local function one(fn)
@@ -1781,7 +1784,7 @@ local function trySwordEquipRemote(tool)
     end)
 end
 
-local function moveSwordToolToBackpack(tool)
+function Impl.moveSwordToolToBackpack(tool)
     local bp=lp:FindFirstChild("Backpack")
     if not tool or not bp then return end
     if tool.Parent==bp then return end
@@ -1789,58 +1792,58 @@ local function moveSwordToolToBackpack(tool)
     task.wait(0.06)
 end
 
-local function resetHandsForSwordEquip()
+function Impl.resetHandsForSwordEquip()
     local char=lp.Character
     local hum=char and char:FindFirstChildOfClass("Humanoid")
     if not hum then return end
-    tryEquipCombatViaRemote()
+    Impl.tryEquipCombatViaRemote()
     task.wait(0.18)
     pcall(function() hum:UnequipTools() end)
     task.wait(0.1)
 end
 
 -- Сначала без сброса рук (часто мешает), затем ForceWeaponCleanup, затем Combat+Unequip.
-local function applySwordEquipPhases(tool,wantTierMin)
+function Impl.applySwordEquipPhases(tool,wantTierMin)
     wantTierMin=wantTierMin or 1
     if not tool then return false end
     local function pulse()
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then return false end
-        moveSwordToolToBackpack(tool)
+        Impl.moveSwordToolToBackpack(tool)
         hum=char:FindFirstChildOfClass("Humanoid")
         if not hum then return false end
         for _=1,4 do
-            trySwordEquipRemote(tool)
+            Impl.trySwordEquipRemote(tool)
             task.wait(0.055)
         end
         hum=char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then return false end
         pcall(function() hum:EquipTool(tool) end)
         task.wait(0.14)
-        tryAuxWeaponRemotesAfterEquip()
-        trySwordEquipRemote(tool)
+        Impl.tryAuxWeaponRemotesAfterEquip()
+        Impl.trySwordEquipRemote(tool)
         task.wait(0.1)
-        return characterHasSwordEquipped(wantTierMin)
+        return Impl.characterHasSwordEquipped(wantTierMin)
     end
     if pulse() then return true end
-    tryForceWeaponCleanupRemote()
+    Impl.tryForceWeaponCleanupRemote()
     task.wait(0.15)
     if pulse() then return true end
-    resetHandsForSwordEquip()
+    Impl.resetHandsForSwordEquip()
     task.wait(0.12)
     if pulse() then return true end
     return false
 end
 
-local function collectSwordToolsFromBackpack()
+function Impl.collectSwordToolsFromBackpack()
     local bp=lp:FindFirstChild("Backpack")
     if not bp then return {} end
     local rows={}
     local function walk(inst)
         for _,t in ipairs(inst:GetChildren()) do
             if t:IsA("Tool") then
-                local tr=swordTierFromUiName(t.Name)
+                local tr=Impl.swordTierFromUiName(t.Name)
                 if tr>0 then rows[#rows+1]={tool=t,tier=tr} end
             elseif t:IsA("Folder") or t:IsA("Model") then
                 walk(t)
@@ -1852,7 +1855,7 @@ local function collectSwordToolsFromBackpack()
     return rows
 end
 
-local function equipBestOwnedSword()
+function Impl.equipBestOwnedSword()
     local char=lp.Character
     local hum=char and char:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health<=0 then return end
@@ -1862,7 +1865,7 @@ local function equipBestOwnedSword()
         if not inst then return end
         for _,t in ipairs(inst:GetChildren()) do
             if t:IsA("Tool") then
-                local tr=swordTierFromUiName(t.Name)
+                local tr=Impl.swordTierFromUiName(t.Name)
                 if tr>bestTier then bestTier,best=tr,t end
             elseif t:IsA("Folder") or t:IsA("Model") then
                 scanBp(t)
@@ -1874,46 +1877,46 @@ local function equipBestOwnedSword()
     for _,t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") and t.Name==best.Name then return end
     end
-    applySwordEquipPhases(best,1)
+    Impl.applySwordEquipPhases(best,1)
 end
 
-local function characterHasSwordEquipped(minTier)
+function Impl.characterHasSwordEquipped(minTier)
     local char=lp.Character
     if not char then return false end
     for _,t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") then
-            local tr=swordTierFromUiName(t.Name)
+            local tr=Impl.swordTierFromUiName(t.Name)
             if tr>=minTier then return true end
         end
     end
     return false
 end
 
-local function equipSwordUntilEquippedOrTimeout(wantTier)
+function Impl.equipSwordUntilEquippedOrTimeout(wantTier)
     wantTier=wantTier or 1
-    debugSwordEquipSnapshot("equip start wantTier="..tostring(wantTier))
+    Impl.debugSwordEquipSnapshot("equip start wantTier="..tostring(wantTier))
     task.wait(0.08)
     for pass=1,22 do
-        local rows=collectSwordToolsFromBackpack()
+        local rows=Impl.collectSwordToolsFromBackpack()
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if hum and hum.Health>0 then
             for _,row in ipairs(rows) do
                 if row.tier>=wantTier then
-                    applySwordEquipPhases(row.tool,wantTier)
-                    if characterHasSwordEquipped(wantTier) then return end
+                    Impl.applySwordEquipPhases(row.tool,wantTier)
+                    if Impl.characterHasSwordEquipped(wantTier) then return end
                 end
             end
-            equipBestOwnedSword()
+            Impl.equipBestOwnedSword()
         end
         task.wait(0.25)
-        if characterHasSwordEquipped(wantTier) then return end
+        if Impl.characterHasSwordEquipped(wantTier) then return end
     end
-    debugSwordEquipSnapshot("TIMEOUT still not equipped wantTier="..tostring(wantTier))
+    Impl.debugSwordEquipSnapshot("TIMEOUT still not equipped wantTier="..tostring(wantTier))
 end
 
 -- QuestNPC17 (Quincy / Soul Dominion island) is skipped — ladder jumps 16 → 18 when Lv allows.
-local function pickMobQuestForLevel(lv)
+function Impl.pickMobQuestForLevel(lv)
     local best=nil
     for _,row in ipairs(MOB_QUEST_LADDER) do
         local name,minLv=row[1],row[2]
@@ -1928,13 +1931,13 @@ local function pickMobQuestForLevel(lv)
     return best or "QuestNPC1"
 end
 
-local function holdKeyE(seconds)
-    vimKeyE(true)
+function Impl.holdKeyE(seconds)
+    Impl.vimKeyE(true)
     task.wait(seconds or 2)
-    vimKeyE(false)
+    Impl.vimKeyE(false)
 end
 
-local function clickGuiCenter(gui)
+function Impl.clickGuiCenter(gui)
     if not gui or not gui:IsA("GuiObject") then return end
     local absPos=gui.AbsolutePosition
     local absSize=gui.AbsoluteSize
@@ -1947,7 +1950,7 @@ local function clickGuiCenter(gui)
     end)
 end
 
-local function getStatsPanelContentFrame()
+function Impl.getStatsPanelContentFrame()
     local pg=lp:FindFirstChild("PlayerGui")
     if not pg then return nil end
     local sp=pg:FindFirstChild("StatsPanelUI") or pg:FindFirstChild("StatsPanelUI",true)
@@ -1961,8 +1964,8 @@ local function getStatsPanelContentFrame()
     return sp:FindFirstChild("Content",true)
 end
 
-local function getStatPointsLabel()
-    local content=getStatsPanelContentFrame()
+function Impl.getStatPointsLabel()
+    local content=Impl.getStatsPanelContentFrame()
     if content then
         local info=content:FindFirstChild("InfoFrame") or content:FindFirstChild("InfoFrame",true)
         if info then
@@ -1975,8 +1978,8 @@ local function getStatPointsLabel()
     return sp and sp:FindFirstChild("PointsAmount",true)
 end
 
-local function getStatHolderFrame()
-    local content=getStatsPanelContentFrame()
+function Impl.getStatHolderFrame()
+    local content=Impl.getStatsPanelContentFrame()
     if content then
         local sf=content:FindFirstChild("StatsFrame") or content:FindFirstChild("StatsFrame",true)
         local holder=sf and (sf:FindFirstChild("Holder") or sf:FindFirstChild("Holder",true))
@@ -1987,8 +1990,8 @@ local function getStatHolderFrame()
     return sp and sp:FindFirstChild("Holder",true)
 end
 
-local function getStatAddButton(statFrameName,altNames)
-    local holder=getStatHolderFrame()
+function Impl.getStatAddButton(statFrameName,altNames)
+    local holder=Impl.getStatHolderFrame()
     if not holder then return nil end
     local names={statFrameName}
     if altNames then for _,n in ipairs(altNames) do names[#names+1]=n end end
@@ -2003,9 +2006,9 @@ local function getStatAddButton(statFrameName,altNames)
     return upg and (upg:FindFirstChild("AddPoints") or upg:FindFirstChild("AddPoints",true))
 end
 
-local function getStatSpendRemote()
+function Impl.getStatSpendRemote()
     if type(STAT_SPEND_REMOTE_PATH)=="table" then
-        local r=resolveChildChain(game,STAT_SPEND_REMOTE_PATH)
+        local r=Impl.resolveChildChain(game,STAT_SPEND_REMOTE_PATH)
         if r and (r:IsA("RemoteEvent") or r:IsA("RemoteFunction")) then return r end
     end
     local rs=game:FindFirstChild("ReplicatedStorage")
@@ -2015,8 +2018,8 @@ local function getStatSpendRemote()
     return nil
 end
 
-local function tryStatSpendRemote(statKey)
-    local r=getStatSpendRemote()
+function Impl.tryStatSpendRemote(statKey)
+    local r=Impl.getStatSpendRemote()
     if not r or not statKey then return end
     pcall(function()
         if r:IsA("RemoteEvent") then r:FireServer(statKey,1)
@@ -2024,15 +2027,15 @@ local function tryStatSpendRemote(statKey)
     end)
 end
 
-local function readStatPointsAvailable()
-    local lb=getStatPointsLabel()
+function Impl.readStatPointsAvailable()
+    local lb=Impl.getStatPointsLabel()
     if lb and lb:IsA("GuiObject") then
-        return parseNumberLoose(lb.Text) or 0
+        return Impl.parseNumberLoose(lb.Text) or 0
     end
     return 0
 end
 
-local function microWalkWhileSpendingStats(stepIndex)
+function Impl.microWalkWhileSpendingStats(stepIndex)
     pcall(function()
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
@@ -2043,35 +2046,35 @@ local function microWalkWhileSpendingStats(stepIndex)
     end)
 end
 
-local function tryAutoSpendStats()
+function Impl.tryAutoSpendStats()
     if not autoLevelProgressEnabled then return end
-    local useRemote=getStatSpendRemote()~=nil
+    local useRemote=Impl.getStatSpendRemote()~=nil
     local safety=0
-    while safety<150 and readStatPointsAvailable()>0 do
+    while safety<150 and Impl.readStatPointsAvailable()>0 do
         safety=safety+1
         local phase=(safety-1)%3
         local isDef=(phase==2)
         local frameName=isDef and "DefenseStatFrame" or "SwordStatFrame"
         local alt=isDef and {"HealthStatFrame","HPStatFrame"} or nil
         local remoteKey=isDef and STAT_SPEND_REMOTE_DEFENSE_KEY or STAT_SPEND_REMOTE_SWORD_KEY
-        if useRemote then tryStatSpendRemote(remoteKey)
+        if useRemote then Impl.tryStatSpendRemote(remoteKey)
         else
-            local btn=getStatAddButton(frameName,alt)
+            local btn=Impl.getStatAddButton(frameName,alt)
             if btn and btn:IsA("GuiObject") and btn.AbsoluteSize.X>1 and btn.AbsoluteSize.Y>1 then
-                clickGuiCenter(btn)
+                Impl.clickGuiCenter(btn)
             elseif not useRemote then break end
         end
-        microWalkWhileSpendingStats(safety)
+        Impl.microWalkWhileSpendingStats(safety)
         task.wait(0.09)
     end
 end
 
-local function tryAutoBuySword()
+function Impl.tryAutoBuySword()
     if not autoLevelProgressEnabled or isInteracting then return end
-    local coins,gems=readMoneyGemsForAutoBuy()
+    local coins,gems=Impl.readMoneyGemsForAutoBuy()
     if coins==nil then return end
     gems=gems or 0
-    local tier=getOwnedSwordTier()
+    local tier=Impl.getOwnedSwordTier()
     if tier>=3 then return end
     local npcName,islandName,holdT=nil,nil,2.1
     if tier==0 and coins>=SWORD_KATANA_COINS then
@@ -2088,33 +2091,33 @@ local function tryAutoBuySword()
     isInteracting=true
     floorHiding=false floorHidePivot=nil
     pcall(function()
-        teleportToIsland(islandName)
+        Impl.teleportToIsland(islandName)
         task.wait(0.55)
-        if tweenToNPC(npcName) then
+        if Impl.tweenToNPC(npcName) then
             task.wait(0.3)
-            local npcHRP=findNPCHRP(npcName)
+            local npcHRP=Impl.findNPCHRP(npcName)
             local npcModel=npcHRP and npcHRP.Parent
             local usedPrompt=false
             if npcModel then
                 for _,desc in ipairs(npcModel:GetDescendants()) do
                     if desc:IsA("ProximityPrompt") then
-                        fireProximityPromptCompat(desc)
+                        Impl.fireProximityPromptCompat(desc)
                         usedPrompt=true
                         task.wait(0.15)
                         break
                     end
                 end
             end
-            if not usedPrompt then pressE() task.wait(0.12) end
-            pressE()
+            if not usedPrompt then Impl.pressE() task.wait(0.12) end
+            Impl.pressE()
             task.wait(0.12)
-            holdKeyE(holdT)
+            Impl.holdKeyE(holdT)
         end
         task.wait(0.35)
     end)
     isInteracting=false
     task.wait(0.35)
-    equipSwordUntilEquippedOrTimeout(wantTier)
+    Impl.equipSwordUntilEquippedOrTimeout(wantTier)
 end
 
 local autoProgressCapNotified=false
@@ -2125,12 +2128,12 @@ task.spawn(function()
         task.wait(1.4)
         if not autoLevelProgressEnabled then continue end
         if isInteracting then continue end
-        tryAutoBuySword()
-        equipBestOwnedSword()
+        Impl.tryAutoBuySword()
+        Impl.equipBestOwnedSword()
         if not autoSpendStatsRunning then
             autoSpendStatsRunning=true
             task.spawn(function()
-                pcall(tryAutoSpendStats)
+                pcall(Impl.tryAutoSpendStats)
                 autoSpendStatsRunning=false
             end)
         end
@@ -2139,7 +2142,7 @@ task.spawn(function()
             autoMobQuestEnabled=true
             autoQuestEnabled=true
         end
-        local lv=readLevelForAutoProgress()
+        local lv=Impl.readLevelForAutoProgress()
         if not lv then
             if not autoProgressNoLevelNotified then
                 autoProgressNoLevelNotified=true
@@ -2164,7 +2167,7 @@ task.spawn(function()
             continue
         end
         autoProgressCapNotified=false
-        local target=pickMobQuestForLevel(lv)
+        local target=Impl.pickMobQuestForLevel(lv)
         if target and target~=selectedQuestNPC then
             selectedMobQuestNPC=target
             selectedQuestNPC=target
@@ -2182,7 +2185,7 @@ task.spawn(function()
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then continue end
         local toolName=slot==1 and selectedStyle1 or selectedStyle2
-        if toolName then equipTool(toolName) end
+        if toolName then Impl.equipTool(toolName) end
         slot=slot==1 and 2 or 1
         if slot==2 and not selectedStyle2 then slot=1 end
     end
@@ -2192,7 +2195,7 @@ task.spawn(function()
     while true do
         task.wait(0.3)
         if not autoQuestEnabled then continue end
-        if forceQuestChange then abandonQuest() fullReset() task.wait(0.2) continue end
+        if forceQuestChange then Impl.abandonQuest() Impl.fullReset() task.wait(0.2) continue end
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then task.wait(1) continue end
@@ -2200,25 +2203,25 @@ task.spawn(function()
         if not questInfo then continue end
         requiredKills=questKillCount[selectedQuestNPC] or 5
         if autoLevelProgressEnabled then
-            abandonQuest()
+            Impl.abandonQuest()
             task.wait(0.25)
         elseif hasActiveQuest then
-            abandonQuest()
+            Impl.abandonQuest()
         end
         Rayfield:Notify({Title="Accepting Quest",Content=selectedQuestNPC.." — "..requiredKills.." kills",Duration=1})
-        local ok=acceptQuest()
+        local ok=Impl.acceptQuest()
         if not ok then isInteracting=false task.wait(0.3) continue end
         -- Go to mob island via portal
         local mobIsland=mobIslandMap[questInfo.mob]
-        if mobIsland then teleportToIsland(mobIsland) end
+        if mobIsland then Impl.teleportToIsland(mobIsland) end
         killCount=0 killCountReached=false
-        startKillTracking(questInfo.mob)
+        Impl.startKillTracking(questInfo.mob)
         if questInfo.boss then
             selectedBossPrefix=questInfo.mob bossFarming=true mobFarming=false
         else
             selectedMobPrefix=questInfo.mob mobFarming=true bossFarming=false
         end
-        equipCombat() lastZ=-math.huge isInteracting=false
+        Impl.equipCombat() lastZ=-math.huge isInteracting=false
         Rayfield:Notify({Title="Farming!",Content=questInfo.mob.." — 0/"..requiredKills,Duration=2})
         while autoQuestEnabled and not killCountReached and not forceQuestChange do
             task.wait(0.2)
@@ -2235,10 +2238,10 @@ task.spawn(function()
                 end)()
                 task.wait(1.5)
                 if forceQuestChange then break end
-                if mobIsland then teleportToIsland(mobIsland) end
-                equipCombat() lastZ=-math.huge
+                if mobIsland then Impl.teleportToIsland(mobIsland) end
+                Impl.equipCombat() lastZ=-math.huge
                 local savedCount=killCount
-                startKillTracking(questInfo.mob)
+                Impl.startKillTracking(questInfo.mob)
                 killCount=savedCount
                 if questInfo.boss then
                     selectedBossPrefix=questInfo.mob bossFarming=true mobFarming=false
@@ -2248,17 +2251,17 @@ task.spawn(function()
                 Rayfield:Notify({Title="Respawned!",Content=killCount.."/"..requiredKills,Duration=2})
             end
         end
-        if forceQuestChange then abandonQuest() fullReset() task.wait(0.2) continue end
-        if not autoQuestEnabled then fullReset() continue end
-        clearTrackedConnections()
+        if forceQuestChange then Impl.abandonQuest() Impl.fullReset() task.wait(0.2) continue end
+        if not autoQuestEnabled then Impl.fullReset() continue end
+        Impl.clearTrackedConnections()
         mobFarming=false bossFarming=false floorHiding=false floorHidePivot=nil
         hasActiveQuest=false isInteracting=false
         Rayfield:Notify({Title="Quest Done! ✅",Content=killCount.."/"..requiredKills.." — next...",Duration=2})
         if autoLevelProgressEnabled then
-            abandonQuest()
+            Impl.abandonQuest()
             task.wait(0.25)
         end
-        local ok2=acceptQuest()
+        local ok2=Impl.acceptQuest()
         if not ok2 then isInteracting=false end
     end
 end)
@@ -2285,7 +2288,7 @@ task.spawn(function()
             worldBossFarming=false
 
             Rayfield:Notify({Title="World Boss Scan",Content=boss.name.." @ "..boss.island,Duration=1.5})
-            teleportToIsland(boss.island)
+            Impl.teleportToIsland(boss.island)
             task.wait(worldBossSpawnDelay)
 
             local char=lp.Character
@@ -2293,15 +2296,15 @@ task.spawn(function()
             local probe=worldBossIslandProbe[boss.island]
             if hrp and probe then
                 char:PivotTo(CFrame.new(probe+Vector3.new(0,4,0)))
-                breakVelocity()
+                Impl.breakVelocity()
                 task.wait(0.25)
             end
 
-            local target=getNearest(findByContains(boss.name),hrp and hrp.Position or Vector3.zero)
+            local target=Impl.getNearest(Impl.findByContains(boss.name),hrp and hrp.Position or Vector3.zero)
             if target then
                 worldBossTargetName=boss.name
                 worldBossFarming=true mobFarming=false bossFarming=false
-                equipCombat() lastZ=-math.huge
+                Impl.equipCombat() lastZ=-math.huge
                 isInteracting=false
                 Rayfield:Notify({Title="Found!",Content=boss.name.." — attacking",Duration=2})
 
@@ -2321,22 +2324,22 @@ task.spawn(function()
                         until (not autoWorldBossEnabled) or (not worldBossFarming) or (h and h.Health>0)
                         if not autoWorldBossEnabled or not worldBossFarming then break end
 
-                        teleportToIsland(boss.island)
+                        Impl.teleportToIsland(boss.island)
                         task.wait(worldBossSpawnDelay)
                         c=lp.Character
                         r=c and c:FindFirstChild("HumanoidRootPart")
                         local returnProbe=worldBossIslandProbe[boss.island]
                         if c and r and returnProbe then
                             c:PivotTo(CFrame.new(returnProbe+Vector3.new(0,4,0)))
-                            breakVelocity()
+                            Impl.breakVelocity()
                             task.wait(0.25)
                         end
-                        equipCombat()
+                        Impl.equipCombat()
                         lastZ=-math.huge
                         missCount=0
                         continue
                     end
-                    local alive=getNearest(findByContains(boss.name),r and r.Position or Vector3.zero)
+                    local alive=Impl.getNearest(Impl.findByContains(boss.name),r and r.Position or Vector3.zero)
                     if alive then
                         missCount=0
                     else
@@ -2370,19 +2373,19 @@ task.spawn(function()
         if isInteracting then floorHiding=false floorHidePivot=nil continue end
         local target=nil
         if bossFarming then
-            local bt=findByPrefix(selectedBossPrefix)
-            target=getNearest(bt,hrp.Position)
+            local bt=Impl.findByPrefix(selectedBossPrefix)
+            target=Impl.getNearest(bt,hrp.Position)
             if not target then
                 local wm=bossWaitMob[selectedBossPrefix]
-                if wm then target=getNearest(findByPrefix(wm),hrp.Position) end
+                if wm then target=Impl.getNearest(Impl.findByPrefix(wm),hrp.Position) end
             end
         end
         if not target and worldBossFarming then
             local worldTarget=worldBossTargetName or selectedWorldBossName
-            target=getNearest(findByContains(worldTarget),hrp.Position)
+            target=Impl.getNearest(Impl.findByContains(worldTarget),hrp.Position)
         end
         if not target and mobFarming then
-            target=getNearest(findByPrefix(selectedMobPrefix),hrp.Position)
+            target=Impl.getNearest(Impl.findByPrefix(selectedMobPrefix),hrp.Position)
         end
         if not target or target.hum.Health<=0 then floorHiding=false floorHidePivot=nil continue end
         if isInteracting then floorHiding=false floorHidePivot=nil continue end
@@ -2390,8 +2393,8 @@ task.spawn(function()
         task.wait(0.1)
         if isInteracting then floorHiding=false floorHidePivot=nil continue end
         if target.hum.Health<=0 then floorHiding=false floorHidePivot=nil continue end
-        pressM1() pressM1() pressM1() pressM1()
-        pressM1() pressM1() pressM1() pressM1()
+        Impl.pressM1() Impl.pressM1() Impl.pressM1() Impl.pressM1()
+        Impl.pressM1() Impl.pressM1() Impl.pressM1() Impl.pressM1()
     end
 end)
 
@@ -2456,7 +2459,7 @@ PlayerTab:CreateToggle({
                 if dir.Magnitude>0 then dir=dir.Unit end
                 bodyVelocity.Velocity=dir*flySpeed bodyGyro.CFrame=cf
             end)
-        else stopFly() end
+        else Impl.stopFly() end
     end,
 })
 PlayerTab:CreateSection("Anti-AFK")
@@ -2476,7 +2479,7 @@ PlayerTab:CreateSection("System")
 PlayerTab:CreateButton({
     Name="❌ Close Script",
     Callback=function()
-        stopAll()
+        Impl.stopAll()
         Rayfield:Notify({Title="Closing...",Content="Stopping everything...",Duration=2})
         task.wait(2) Rayfield:Destroy()
     end,
@@ -2522,9 +2525,9 @@ MobTab:CreateToggle({
                 local island=mobIslandMap[selectedMobPrefix]
                 if island then
                     Rayfield:Notify({Title="Teleporting",Content=island.."...",Duration=2})
-                    teleportToIsland(island)
+                    Impl.teleportToIsland(island)
                 end
-                mobFarming=true equipCombat() lastZ=-math.huge
+                mobFarming=true Impl.equipCombat() lastZ=-math.huge
                 Rayfield:Notify({Title="Mob Farm ON",Content=selectedMobPrefix,Duration=2})
             end)
         else
@@ -2557,12 +2560,12 @@ MobTab:CreateToggle({
         if Value then
             autoBossQuestEnabled=false autoQuestEnabled=true
             selectedQuestNPC=selectedMobQuestNPC
-            abandonQuest() fullReset()
+            Impl.abandonQuest() Impl.fullReset()
             Rayfield:Notify({Title="Mob Quest ON",Content=selectedMobQuestNPC,Duration=2})
         else
             autoMobQuestEnabled=false
             autoQuestEnabled=autoBossQuestEnabled
-            if not autoQuestEnabled then fullReset() end
+            if not autoQuestEnabled then Impl.fullReset() end
             Rayfield:Notify({Title="Mob Quest OFF",Content="Stopped.",Duration=2})
         end
     end,
@@ -2598,9 +2601,9 @@ BossTab:CreateToggle({
                 local island=mobIslandMap[selectedBossPrefix]
                 if island then
                     Rayfield:Notify({Title="Teleporting",Content=island.."...",Duration=2})
-                    teleportToIsland(island)
+                    Impl.teleportToIsland(island)
                 end
-                bossFarming=true equipCombat() lastZ=-math.huge
+                bossFarming=true Impl.equipCombat() lastZ=-math.huge
                 Rayfield:Notify({Title="Boss Farm ON",Content=selectedBossPrefix,Duration=2})
             end)
         else
@@ -2633,12 +2636,12 @@ BossTab:CreateToggle({
         if Value then
             autoMobQuestEnabled=false autoQuestEnabled=true
             selectedQuestNPC=selectedBossQuestNPC
-            abandonQuest() fullReset()
+            Impl.abandonQuest() Impl.fullReset()
             Rayfield:Notify({Title="Boss Quest ON",Content=selectedBossQuestNPC,Duration=2})
         else
             autoBossQuestEnabled=false
             autoQuestEnabled=autoMobQuestEnabled
-            if not autoQuestEnabled then fullReset() end
+            if not autoQuestEnabled then Impl.fullReset() end
             Rayfield:Notify({Title="Boss Quest OFF",Content="Stopped.",Duration=2})
         end
     end,
@@ -2696,7 +2699,7 @@ FarmingTab:CreateButton({
         if farmingGUI and farmingGUI.Parent then
             farmingGUI:Destroy() farmingGUI=nil
         else
-            createFarmingGUI()
+            Impl.createFarmingGUI()
             Rayfield:Notify({Title="Farming Hub",Content="Right-click skill to cycle CD.",Duration=3})
         end
     end,
@@ -2750,7 +2753,7 @@ NPCsTab:CreateButton({
         task.spawn(function()
             isInteracting=true
             floorHiding=false floorHidePivot=nil
-            local found=tweenToNPC(npc.name)
+            local found=Impl.tweenToNPC(npc.name)
             if found then
                 Rayfield:Notify({Title="Arrived!",Content=npc.name,Duration=2})
             else
@@ -2776,7 +2779,7 @@ for _,cat in ipairs(npcCategories) do
                 task.spawn(function()
                     isInteracting=true
                     floorHiding=false floorHidePivot=nil
-                    local found=tweenToNPC(npcRef.name)
+                    local found=Impl.tweenToNPC(npcRef.name)
                     if found then
                         Rayfield:Notify({Title="Arrived!",Content=npcRef.name,Duration=2})
                     else
@@ -2807,7 +2810,7 @@ OthersTab:CreateButton({
     Callback=function()
         Rayfield:Notify({Title="Teleporting",Content=selectedIsland.."...",Duration=2})
         task.spawn(function()
-            teleportToIsland(selectedIsland)
+            Impl.teleportToIsland(selectedIsland)
             Rayfield:Notify({Title="Arrived!",Content=selectedIsland,Duration=2})
         end)
     end,
@@ -2837,7 +2840,7 @@ for _,island in ipairs(quickIslands) do
         Name=island.emoji.." "..island.name,
         Callback=function()
             Rayfield:Notify({Title="Teleporting",Content=island.name.."...",Duration=2})
-            task.spawn(function() teleportToIsland(island.name) end)
+            task.spawn(function() Impl.teleportToIsland(island.name) end)
         end,
     })
 end
@@ -2848,14 +2851,14 @@ do
     Tab:CreateButton({
         Name="Auto Hogyoku",
         Callback=function()
-            runAutoHogyokuCollect()
+            Impl.runAutoHogyokuCollect()
         end,
     })
     Tab:CreateSection("Demonite")
     Tab:CreateButton({
         Name="Auto Demonite",
         Callback=function()
-            runAutoDemoniteCollect()
+            Impl.runAutoDemoniteCollect()
         end,
     })
 end
