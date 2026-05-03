@@ -1452,10 +1452,14 @@ function Impl.parseNumberLoose(s)
     if not s or s=="" then return nil end
     local t=s:gsub(",",""):gsub("%s","")
     local lower=string.lower(t)
+    -- "Lv. 110" / "Level: 1,234" — иначе [%d%.]+ ловит ".110" и tonumber ломается
+    local stripped=lower:gsub("^[^%d]*","")
+    if stripped=="" then stripped=lower end
     local mult=1
-    if lower:match("k$") then mult=1000 lower=lower:gsub("k$","") end
-    if lower:match("m$") then mult=1000000 lower=lower:gsub("m$","") end
-    local num=tonumber(lower:match("[%d%.]+"))
+    if stripped:match("k$") then mult=1000 stripped=stripped:gsub("k$","") end
+    if stripped:match("m$") then mult=1000000 stripped=stripped:gsub("m$","") end
+    local chunk=stripped:match("^[%d%.]+") or stripped:match("[%d%.]+")
+    local num=chunk and tonumber(chunk) or nil
     if not num then return nil end
     return math.floor(num*mult+0.5)
 end
@@ -1533,10 +1537,6 @@ end
 function Impl.readLevelFromHud()
     local pg=lp:FindFirstChild("PlayerGui")
     if not pg then return nil end
-    local root=pg:FindFirstChild("BasicStatsCurrencyAndButtonsUI",true)
-    if not root then return nil end
-    local mf=root:FindFirstChild("MainFrame",true)
-    local li=(mf and mf:FindFirstChild("LevelInfo",true)) or root:FindFirstChild("LevelInfo",true)
     local best=nil
     local function takeLevelNumber(n)
         if n and n>=1 and n<=1e9 then
@@ -1547,13 +1547,28 @@ function Impl.readLevelFromHud()
         local n=Impl.parseNumberLoose(raw)
         takeLevelNumber(n)
     end
-    if li then
-        for _,d in ipairs(li:GetDescendants()) do
-            if d:IsA("TextLabel") or d:IsA("TextButton") then takeLabelText(d.Text) end
+    local roots={}
+    local r1=pg:FindFirstChild("BasicStatsCurrencyAndButtonsUI",true)
+    if r1 then roots[#roots+1]=r1 end
+    local r2=pg:FindFirstChild("HUD New",true) or pg:FindFirstChild("HUDNew",true)
+    if r2 then roots[#roots+1]=r2 end
+    for _,root in ipairs(roots) do
+        local mf=root:FindFirstChild("MainFrame",true)
+        local li=(mf and mf:FindFirstChild("LevelInfo",true)) or root:FindFirstChild("LevelInfo",true)
+        if li then
+            local lvDirect=li:FindFirstChild("Level",true)
+            if lvDirect and (lvDirect:IsA("TextLabel") or lvDirect:IsA("TextButton")) then
+                takeLabelText(lvDirect.Text)
+            end
+            for _,d in ipairs(li:GetDescendants()) do
+                if d:IsA("TextLabel") or d:IsA("TextButton") then takeLabelText(d.Text) end
+            end
         end
     end
     if not best then
-        -- pattern mode (fourth arg false): Lv/Lvl/Level + digits — раньше с plain=true ломался поиск по "Lv"
+        local root=roots[1]
+        if not root then return nil end
+        -- pattern mode: Lv/Lvl/Level + digits
         for _,d in ipairs(root:GetDescendants()) do
             if d:IsA("TextLabel") or d:IsA("TextButton") then
                 local raw=d.Text or ""
@@ -1824,9 +1839,10 @@ function Impl.tryUseItemRemoteForTool(tool)
             local ev=rem and rem:FindFirstChild(nm)
             if not ev then ev=rs:FindFirstChild(nm,true) end
             if ev and ev:IsA("RemoteEvent") then
+                ev:FireServer("Equip",tool.Name)
+                ev:FireServer("Use",tool.Name)
                 ev:FireServer(tool)
                 ev:FireServer(tool.Name)
-                ev:FireServer("Equip",tool.Name)
             elseif ev and ev:IsA("RemoteFunction") then
                 ev:InvokeServer(tool)
                 ev:InvokeServer(tool.Name)
@@ -1902,6 +1918,10 @@ function Impl.applySwordEquipPhases(tool,wantTierMin)
         Impl.moveSwordToolToBackpack(tool)
         hum=char:FindFirstChildOfClass("Humanoid")
         if not hum then return false end
+        for _=1,3 do
+            Impl.tryUseItemRemoteForTool(tool)
+            task.wait(0.07)
+        end
         for _=1,4 do
             Impl.trySwordEquipRemote(tool)
             task.wait(0.055)
