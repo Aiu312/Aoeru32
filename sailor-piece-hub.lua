@@ -1,5 +1,33 @@
 -- Sailor Piece Hub | v45
 -- Rayfield через HttpGet; хаб использует Luau (continue). Если всё серым — см. Developer Console F9.
+--
+-- ► Лоадер с GitHub: при необходимости подставь raw URL ниже только в ЛОКАЛЬНОЙ копии или в маленьком лоадере.
+--    В файле на GitHub переменную оставь "" иначе хаб может уйти в рекурсию (качать себя снова).
+--    Однострочник в экзекутор: loadstring(game:HttpGet("RAW_URL",true))()
+--
+-- Raw (коммит, как у тебя): https://raw.githubusercontent.com/Aiu312/Aoeru32/a2b6e27284d7e8f5b56dafbb2b5dc4eba67af684/sailor-piece-hub.lua
+-- Raw (ветка main, обновляется при push): https://raw.githubusercontent.com/Aiu312/Aoeru32/refs/heads/main/sailor-piece-hub.lua
+-- Если репозиторий на master — замени main на master в ссылке.
+local SAILOR_HUB_LOAD_FROM_URL=""
+if type(SAILOR_HUB_LOAD_FROM_URL)=="string" and SAILOR_HUB_LOAD_FROM_URL~="" then
+	local ok,h=pcall(function()
+		return game:HttpGet(SAILOR_HUB_LOAD_FROM_URL,true)
+	end)
+	if not ok or type(h)~="string" or #h<500 then
+		warn("[Sailor Piece Hub] не скачан скрипт с URL (raw GitHub?). Проверь ссылку и что репозиторий Public. Ответ:",tostring(h))
+		return
+	end
+	local fn,estr=loadstring(h,"SailorHubGithub")
+	if not fn then
+		warn("[Sailor Piece Hub] loadstring после HttpGet:",estr)
+		return
+	end
+	local okRun,errRun=pcall(fn)
+	if not okRun then
+		warn("[Sailor Piece Hub] ошибка выполнения подгруженного хаба:",errRun)
+	end
+	return
+end
 
 local Rayfield
 do
