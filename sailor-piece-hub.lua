@@ -1,46 +1,23 @@
 -- Sailor Piece Hub | v55
 -- Executor: Potassium | Library: Rayfield
 --
--- Однострочник (экзекутор) — можно без этих строк, если уже вставлен весь файл:
---   loadstring(game:HttpGet("https://raw.githubusercontent.com/Aiu312/Aoeru32/refs/heads/main/sailor-piece-hub-v55.lua",true))()
+-- ► Однострочник для экзекутора (вставляй только это):
+--   loadstring(game:HttpGet("https://raw.githubusercontent.com/Aiu312/Aoeru32/refs/heads/main/sailor-piece-hub.lua",true))()
 --
--- Raw тот же файл в репозитории (можно переименовать в main под своё имя в URL).
-local SAILOR_HUB_REPO_RAW="https://raw.githubusercontent.com/Aiu312/Aoeru32/refs/heads/main/sailor-piece-hub-v55.lua"
-local SAILOR_HUB_LOAD_FROM_URL=SAILOR_HUB_REPO_RAW
--- Чтобы только локально грузиться без второго запроса: ниже переопредели как "".
-if type(SAILOR_HUB_LOAD_FROM_URL)~="string" then SAILOR_HUB_LOAD_FROM_URL="" end
-
+-- ► Этот файл заливается на GitHub как sailor-piece-hub.lua
+--   SAILOR_HUB_LOAD_FROM_URL оставь "" — иначе рекурсия (файл качает сам себя).
+local SAILOR_HUB_LOAD_FROM_URL=""
 if type(SAILOR_HUB_LOAD_FROM_URL)=="string" and SAILOR_HUB_LOAD_FROM_URL~="" then
-    if _G.__SAILOR_HUB_GOT_PAYLOAD_R55 then
-        goto _sailor_after_bootstrap_r55
-    end
-    local h=nil
-    local okHg=pcall(function() h=game:HttpGet(SAILOR_HUB_LOAD_FROM_URL,true) end)
-    if (not okHg or type(h)~="string" or #h<500) then
-        pcall(function()
-            local rq=syn and syn.request or http_request or request
-            if type(rq)~="function" then return end
-            local res=rq({Url=SAILOR_HUB_LOAD_FROM_URL,Method="GET"})
-            local b=res and (res.Body or res.body)
-            if type(b)=="string" and #b>500 then h=b end
-        end)
-    end
-
-    if type(h)~="string" or #h<500 then
-        warn("[SailorHub] скачивание хаба не удалось (raw URL / Public / имя файла в URL). Ответ:",tostring(h))
-        return
+    local ok,h=pcall(function() return game:HttpGet(SAILOR_HUB_LOAD_FROM_URL,true) end)
+    if not ok or type(h)~="string" or #h<500 then
+        warn("[SailorHub] HttpGet failed:",tostring(h)) return
     end
     local fn,estr=loadstring(h,"SailorHubGithub")
     if not fn then warn("[SailorHub] loadstring:",estr) return end
-
-    _G.__SAILOR_HUB_GOT_PAYLOAD_R55=true
     local okRun,errRun=pcall(fn)
-    _G.__SAILOR_HUB_GOT_PAYLOAD_R55=false
-
-    if not okRun then warn("[SailorHub] ошибка выполнения:",errRun) end
+    if not okRun then warn("[SailorHub] run error:",errRun) end
     return
 end
-::_sailor_after_bootstrap_r55::
 
 -- =====================
 --   RAYFIELD LOAD
