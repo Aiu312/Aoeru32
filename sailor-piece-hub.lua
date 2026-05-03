@@ -1,4 +1,4 @@
--- Sailor Piece Hub | v47
+-- Sailor Piece Hub | v48
 -- Rayfield через HttpGet; хаб использует Luau (continue). Если всё серым — см. Developer Console F9.
 --
 -- ► Лоадер с GitHub: при необходимости подставь raw URL ниже только в ЛОКАЛЬНОЙ копии или в маленьком лоадере.
@@ -457,6 +457,10 @@ local SWORD_GRYPHON_COINS=650000
 local SWORD_GRYPHON_GEMS=650
 -- true: печатает в Output (F9) имена тулзов, тир и ремоут — скопируй блок и пришли, если меч не экипируется.
 local DEBUG_SWORD_EQUIP=false
+-- Клик по слоту инвентаря (как тап пальцем) — не чаще, чем раз в N секунд.
+local INV_UI_CLICK_COOLDOWN=3.2
+local lastInvUiSwordClickClock=0
+local lastInvTierPeekClock=0
 local SWORD_EQUIP_REMOTE_PATH=nil
 local STAT_SPEND_REMOTE_PATH=nil
 local STAT_SPEND_REMOTE_SWORD_KEY="Sword"
@@ -1696,6 +1700,11 @@ function Impl.swordTierFromUiName(name)
         or string.find(low,"rapier",1,true) or string.find(low,"katana+",1,true)
         or string.find(low,"nodachi",1,true) then return 1 end
     if string.find(low,"blade",1,true) then return 1 end
+    local raw=name
+    if string.find(raw,"атана",1,true) then return 1 end
+    if string.find(raw,"Катана",1,true) then return 1 end
+    if string.find(raw,"Гриффон",1,true) or string.find(raw,"Грифон",1,true) then return 3 end
+    if string.find(raw,"Тёмный",1,true) and string.find(raw,"клин",1,true) then return 2 end
     return 0
 end
 
@@ -1725,10 +1734,30 @@ function Impl.toolSwordTier(tool)
     return tr
 end
 
-function Impl.getInventoryPanelStorage()
+-- Тир меча по одному GUI-слоту (имя фрейма + подписи внутри слота).
+function Impl.slotGuiSwordTier(guiSlot)
+    if not guiSlot then return 0 end
+    local tier=Impl.swordTierFromUiName(guiSlot.Name)
+    if tier>0 then return tier end
+    for _,d in ipairs(guiSlot:GetDescendants()) do
+        if d:IsA("TextLabel") or d:IsA("TextButton") or d:IsA("TextBox") then
+            tier=math.max(tier,Impl.swordTierFromUiName(d.Text))
+            if tier>=3 then return tier end
+        end
+    end
+    return tier
+end
+
+function Impl.getInventoryPanelRoot()
     local pg=lp:FindFirstChild("PlayerGui")
     if not pg then return nil end
-    local inv=pg:FindFirstChild("InventoryPanelUI") or pg:FindFirstChild("InventoryPanelUI",true)
+    return pg:FindFirstChild("InventoryPanelUI") or pg:FindFirstChild("InventoryPanelUI",true)
+end
+
+function Impl.getInventoryPanelStorage()
+    local inv=Impl.getInventoryPanelRoot()
+    local pg=lp:FindFirstChild("PlayerGui")
+    if not inv and pg then inv=pg:FindFirstChild("InventoryUI",true) or pg:FindFirstChild("BagUI",true) end
     if not inv then return nil end
     local mf=inv:FindFirstChild("MainFrame") or inv:FindFirstChild("MainFrame",true)
     local fr=mf and (mf:FindFirstChild("Frame") or mf:FindFirstChild("Frame",true))
@@ -1737,23 +1766,135 @@ function Impl.getInventoryPanelStorage()
     local sh=holder and (holder:FindFirstChild("StorageHolder") or holder:FindFirstChild("StorageHolder",true))
     local storage=sh and (sh:FindFirstChild("Storage") or sh:FindFirstChild("Storage",true))
     if storage then return storage end
-    return inv:FindFirstChild("Storage",true)
+    storage=inv:FindFirstChild("Storage",true)
+    if storage then return storage end
+    for _,nm in ipairs({"ItemStorage","ItemsHolder","GearStorage","WeaponStorage","WeaponsHolder","MainStorage","Items","BackpackContent"}) do
+        local x=inv:FindFirstChild(nm,true)
+        if x and x:IsA("GuiObject") then return x end
+    end
+    return nil
+end
+
+function Impl.inventoryGuiSlotLooksPlausible(guiSlot)
+    if not guiSlot or not guiSlot:IsA("GuiObject") then return false end
+    local ok,ax,ay=pcall(function() return guiSlot.AbsoluteSize.X,guiSlot.AbsoluteSize.Y end)
+    if not ok or ax<18 or ay<18 then return false end
+    if guiSlot.Visible==false then return false end
+    return true
+end
+
+function Impl.walkInventoryStorageSlots(storage,eachSlot)
+    if not storage then return end
+    local function isLayout(n)
+        return n:IsA("UIListLayout") or n:IsA("UIGridLayout") or n:IsA("UIPadding")
+            or n:IsA("UICorner") or n:IsA("UIPageLayout") or n:IsA("UIStroke")
+    end
+    local function feedScroll(sc)
+        for _,slot in ipairs(sc:GetChildren()) do
+            if not isLayout(slot) then eachSlot(slot) end
+        end
+    end
+    local function scan(container,depth)
+        if depth>10 or not container then return end
+        if container:IsA("ScrollingFrame") then
+            feedScroll(container)
+            return
+        end
+        for _,ch in ipairs(container:GetChildren()) do
+            if string.sub(ch.Name,1,5)=="Item_" then
+                eachSlot(ch)
+            elseif ch:IsA("ScrollingFrame") then
+                feedScroll(ch)
+            elseif ch:IsA("Frame") or ch:IsA("Folder") then
+                scan(ch,depth+1)
+            end
+        end
+    end
+    if storage:IsA("ScrollingFrame") then
+        feedScroll(storage)
+    else
+        scan(storage,0)
+    end
 end
 
 function Impl.scanInventoryStorageForSwordTier(storage,best)
     if not storage then return best end
-    for _,ch in ipairs(storage:GetChildren()) do
-        if string.sub(ch.Name,1,5)~="Item_" then continue end
-        local t=Impl.swordTierFromUiName(ch.Name)
-        if t>0 then best=math.max(best,t) end
-        for _,d in ipairs(ch:GetDescendants()) do
-            if d:IsA("TextLabel") or d:IsA("TextButton") then
-                local tt=Impl.swordTierFromUiName(d.Text)
-                if tt>0 then best=math.max(best,tt) end
-            end
-        end
+    Impl.walkInventoryStorageSlots(storage,function(slot)
+        if not Impl.inventoryGuiSlotLooksPlausible(slot) then return end
+        local tr=Impl.slotGuiSwordTier(slot)
+        if tr>0 then best=math.max(best,tr) end
+    end)
+    return best
+end
+
+function Impl.mergeSwordTierFromAllInventoryUi(best)
+    local st=Impl.getInventoryPanelStorage()
+    if st then best=Impl.scanInventoryStorageForSwordTier(st,best) end
+    local root=Impl.getInventoryPanelRoot()
+    if root and root~=st then
+        best=Impl.scanInventoryStorageForSwordTier(root,best)
     end
     return best
+end
+
+function Impl.pickClickableInInventorySlot(slot)
+    local best,bArea=nil,0
+    for _,d in ipairs(slot:GetDescendants()) do
+        if (d:IsA("ImageButton") or d:IsA("TextButton")) and d.Visible~=false and d.Active~=false then
+            local ax,ay=20,20
+            pcall(function() ax,ay=d.AbsoluteSize.X,d.AbsoluteSize.Y end)
+            local a=ax*ay
+            if a>bArea and ax>4 and ay>4 then bArea,best=a,d end
+        end
+    end
+    if best then return best end
+    if slot:IsA("ImageButton") or slot:IsA("TextButton") then return slot end
+    if slot:IsA("GuiButton") then return slot end
+    return slot
+end
+
+function Impl.pickBestInventorySwordGuiSlot(wantMinTier)
+    wantMinTier=wantMinTier or 1
+    local storage=Impl.getInventoryPanelStorage() or Impl.getInventoryPanelRoot()
+    if not storage then return nil,0 end
+    local bestSlot,bestTier=nil,0
+    Impl.walkInventoryStorageSlots(storage,function(slot)
+        if not Impl.inventoryGuiSlotLooksPlausible(slot) then return end
+        local tr=Impl.slotGuiSwordTier(slot)
+        if tr>=wantMinTier and tr>=bestTier then
+            bestTier,bestSlot=tr,slot
+        end
+    end)
+    return bestSlot,bestTier
+end
+
+function Impl.tryOpenInventoryPanelKey()
+    pcall(function()
+        VIM:SendKeyEvent(true,Enum.KeyCode.I,false,game)
+        task.wait(0.045)
+        VIM:SendKeyEvent(false,Enum.KeyCode.I,false,game)
+    end)
+    task.wait(0.35)
+end
+
+-- Симулирует тап/ЛКМ по слоту с лучшим мечом (игра часто не кидает Tool в Backpack без клика).
+function Impl.tryInventoryUiClickEquipBestSword(wantMinTier,tapOpenKey)
+    wantMinTier=wantMinTier or 1
+    local tNow=os.clock()
+    if tNow-lastInvUiSwordClickClock<INV_UI_CLICK_COOLDOWN then return false end
+    if Impl.characterHasSwordEquipped(wantMinTier) then return true end
+    if tapOpenKey then Impl.tryOpenInventoryPanelKey() end
+    local slot,tier=Impl.pickBestInventorySwordGuiSlot(wantMinTier)
+    if not slot or tier<wantMinTier then return false end
+    lastInvUiSwordClickClock=tNow
+    local tgt=Impl.pickClickableInInventorySlot(slot)
+    if tgt and tgt:IsA("GuiObject") then
+        Impl.clickGuiCenter(tgt)
+        task.wait(0.1)
+        Impl.clickGuiCenter(tgt)
+        task.wait(0.16)
+    end
+    return Impl.characterHasSwordEquipped(wantMinTier)
 end
 
 function Impl.getOwnedSwordTier()
@@ -1775,7 +1916,7 @@ function Impl.getOwnedSwordTier()
     scanTools(lp:FindFirstChild("Backpack"))
     scanTools(lp.Character)
     scanTools(lp:FindFirstChild("StarterGear"))
-    best=Impl.scanInventoryStorageForSwordTier(Impl.getInventoryPanelStorage(),best)
+    best=Impl.mergeSwordTierFromAllInventoryUi(best)
     return best
 end
 
@@ -2012,7 +2153,7 @@ function Impl.collectSwordToolsFromBackpack()
     return rows
 end
 
--- Лучший меч среди персонажа + рюкзака (только BP ломало ручной экип: в руках топ, в BP слабее — скрипт снимал всё).
+-- Лучший меч среди персонажа + рюкзака + клик по слоту в UI (игра может не давать Tool до тапа).
 function Impl.equipBestOwnedSword()
     local char=lp.Character
     local hum=char and char:FindFirstChildOfClass("Humanoid")
@@ -2031,16 +2172,35 @@ function Impl.equipBestOwnedSword()
             elseif t:IsA("Folder") or t:IsA("Model") then scanBp(t) end
         end
     end
-    for _,t in ipairs(char:GetChildren()) do considerTool(t) end
-    scanBp(bp)
-    local sg=lp:FindFirstChild("StarterGear")
-    if sg then scanBp(sg) end
-    if not best or bestTier<=0 then return end
-    if best.Parent==char then return end
+    local function reloadFromWorld()
+        best,bestTier=nil,0
+        local c=lp.Character
+        char=c
+        if not c then return end
+        for _,t in ipairs(c:GetChildren()) do considerTool(t) end
+        scanBp(lp:FindFirstChild("Backpack"))
+        local sg=lp:FindFirstChild("StarterGear")
+        if sg then scanBp(sg) end
+    end
+    reloadFromWorld()
+
+    local uiOwned=Impl.mergeSwordTierFromAllInventoryUi(0)
+
     local equippedBest=0
     for _,t in ipairs(char:GetChildren()) do
         if t:IsA("Tool") then equippedBest=math.max(equippedBest,Impl.toolSwordTier(t)) end
     end
+
+    local needEquip=not(best and best.Parent==char)
+    local wantTryUi=needEquip and uiOwned>=1 and equippedBest<uiOwned
+
+    if wantTryUi then
+        Impl.tryInventoryUiClickEquipBestSword(1,true)
+        reloadFromWorld()
+    end
+
+    if not best or bestTier<=0 then return end
+    if best.Parent==char then return end
     if bestTier<=equippedBest and equippedBest>=1 then return end
     Impl.applySwordEquipPhases(best,1)
 end
@@ -2061,11 +2221,18 @@ function Impl.equipSwordUntilEquippedOrTimeout(wantTier)
     wantTier=wantTier or 1
     Impl.debugSwordEquipSnapshot("equip start wantTier="..tostring(wantTier))
     task.wait(0.08)
+    Impl.tryInventoryUiClickEquipBestSword(wantTier,true)
+    task.wait(0.28)
     for pass=1,22 do
         local rows=Impl.collectSwordToolsFromBackpack()
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if hum and hum.Health>0 then
+            if pass<=2 and #rows==0 and Impl.mergeSwordTierFromAllInventoryUi(0)>=wantTier then
+                Impl.tryInventoryUiClickEquipBestSword(wantTier,pass==1)
+                task.wait(0.35)
+                rows=Impl.collectSwordToolsFromBackpack()
+            end
             for _,row in ipairs(rows) do
                 if row.tier>=wantTier then
                     Impl.applySwordEquipPhases(row.tool,wantTier)
@@ -2240,6 +2407,14 @@ function Impl.tryAutoBuySword()
     if coins==nil then return end
     gems=gems or 0
     local tier=Impl.getOwnedSwordTier()
+    if tier>=3 then return end
+    -- Закрытый инвентарь даёт слотам размер 0 — реже подглядываем I, чтобы не дёргать UI каждый тик.
+    local tPeek=os.clock()
+    if tier==0 and coins>=SWORD_KATANA_COINS and tPeek-lastInvTierPeekClock>=8 then
+        lastInvTierPeekClock=tPeek
+        Impl.tryOpenInventoryPanelKey()
+        tier=Impl.getOwnedSwordTier()
+    end
     if tier>=3 then return end
     local npcName,islandName,holdT=nil,nil,2.1
     if tier==0 and coins>=SWORD_KATANA_COINS then
