@@ -1,4 +1,4 @@
--- Sailor Piece Hub | v49
+-- Sailor Piece Hub | v50
 -- Rayfield через HttpGet; хаб использует Luau (continue). Если всё серым — см. Developer Console F9.
 --
 -- ► Лоадер с GitHub: при необходимости подставь raw URL ниже только в ЛОКАЛЬНОЙ копии или в маленьком лоадере.
@@ -2142,10 +2142,12 @@ function Impl.applySwordEquipPhases(tool,wantTierMin,options)
     options=options or {}
     local aggressive=options.aggressive~=false
     if not tool then return false end
+    if Impl.characterHasSwordEquipped(wantTierMin) then return true end
     local function pulse()
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then return false end
+        if Impl.characterHasSwordEquipped(wantTierMin) then return true end
         Impl.tryRequestInventoryRemote()
         task.wait(0.05)
         if Impl.tryGameEquipWeaponByName(tool.Name,wantTierMin,4) then return true end
@@ -2217,6 +2219,16 @@ function Impl.collectSwordToolsFromBackpack()
 end
 
 -- Лучший меч среди персонажа + рюкзака + клик по слоту в UI (игра может не давать Tool до тапа).
+function Impl.characterMaxEquippedSwordTier()
+    local char=lp.Character
+    if not char then return 0 end
+    local m=0
+    for _,t in ipairs(char:GetDescendants()) do
+        if t:IsA("Tool") then m=math.max(m,Impl.toolSwordTier(t)) end
+    end
+    return m
+end
+
 function Impl.equipBestOwnedSword()
     local char=lp.Character
     local hum=char and char:FindFirstChildOfClass("Humanoid")
@@ -2259,25 +2271,25 @@ function Impl.equipBestOwnedSword()
     reloadFromWorld()
 
     local uiOwned=Impl.mergeSwordTierFromAllInventoryUi(0)
+    local eqMx=Impl.characterMaxEquippedSwordTier()
 
-    local equippedBest=0
-    for _,t in ipairs(char:GetChildren()) do
-        if t:IsA("Tool") then equippedBest=math.max(equippedBest,Impl.toolSwordTier(t)) end
-    end
+    if bestTier>=1 and eqMx>=bestTier then return end
 
     local needEquip=not(best and best.Parent==char)
-    local wantTryUi=needEquip and uiOwned>=1 and equippedBest<uiOwned
+    local wantTryUi=needEquip and uiOwned>=1 and eqMx<uiOwned
 
     if wantTryUi then
         Impl.tryInventoryUiClickEquipBestSword(1,true)
         reloadFromWorld()
+        eqMx=Impl.characterMaxEquippedSwordTier()
+        if bestTier>=1 and eqMx>=bestTier then return end
     end
 
     if not best or bestTier<=0 then return end
     if best.Parent==char then return end
-    if bestTier<=equippedBest and equippedBest>=1 then return end
+    if bestTier<=eqMx and eqMx>=1 then return end
     if Impl.tryGameEquipWeaponByName(best.Name,bestTier) then return end
-    Impl.applySwordEquipPhases(best,1)
+    Impl.applySwordEquipPhases(best,bestTier)
 end
 
 function Impl.characterHasSwordEquipped(minTier)
