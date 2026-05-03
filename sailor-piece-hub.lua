@@ -1538,11 +1538,14 @@ function Impl.readLevelFromHud()
     local mf=root:FindFirstChild("MainFrame",true)
     local li=(mf and mf:FindFirstChild("LevelInfo",true)) or root:FindFirstChild("LevelInfo",true)
     local best=nil
+    local function takeLevelNumber(n)
+        if n and n>=1 and n<=1e9 then
+            if not best or n>best then best=math.floor(n) end
+        end
+    end
     local function takeLabelText(raw)
         local n=Impl.parseNumberLoose(raw)
-        if n and n>=1 and n<=AUTO_PROGRESS_LEVEL_STOP+10000 then
-            if not best or n>best then best=n end
-        end
+        takeLevelNumber(n)
     end
     if li then
         for _,d in ipairs(li:GetDescendants()) do
@@ -1550,13 +1553,24 @@ function Impl.readLevelFromHud()
         end
     end
     if not best then
+        -- pattern mode (fourth arg false): Lv/Lvl/Level + digits — раньше с plain=true ломался поиск по "Lv"
         for _,d in ipairs(root:GetDescendants()) do
             if d:IsA("TextLabel") or d:IsA("TextButton") then
                 local raw=d.Text or ""
                 local low=string.lower(raw)
-                if string.find(low,"level",1,true) or string.find(low,"lvl",1,true)
-                    or string.find(low,"lv%s",1) or string.find(low,"^%s*lv%s",1) then
-                    takeLabelText(raw)
+                local use=false
+                if string.find(low,"level",1,true) or string.find(low,"lvl",1,true) then use=true end
+                if not use then
+                    if string.match(low,"^%s*lv[l%.]?%s*%d")
+                        or string.match(low,"lvl%s*%d")
+                        or string.match(raw,"[Ll][Vv]%.?%s*%d") then
+                        use=true
+                    end
+                end
+                if use then
+                    local m=string.match(raw,"[Ll][Vv][Ll]?%.?%s*:?%s*([%d,]+[%d%.]*[kKmM]?)")
+                        or string.match(raw,"[Ll][Ee][Vv][Ee][Ll]%.?%s*:?%s*([%d,]+[%d%.]*[kKmM]?)")
+                    if m then takeLevelNumber(Impl.parseNumberLoose(m)) else takeLabelText(raw) end
                 end
             end
         end
@@ -1564,23 +1578,66 @@ function Impl.readLevelFromHud()
     return best
 end
 
+-- Грубый поиск по всему PlayerGui (если путь к BasicStats сменился).
+function Impl.readLevelFromPlayerGuiDeepScan()
+    local pg=lp:FindFirstChild("PlayerGui")
+    if not pg then return nil end
+    local best=nil
+    local scanned=0
+    local maxScan=3500
+    local function consider(raw,parentName)
+        if not raw or raw=="" then return end
+        local low=string.lower(raw)
+        if string.find(low,"gem",1,true) or string.find(low,"coin",1,true) or string.find(low,"money",1,true) then return end
+        local hint=false
+        local pl=parentName and string.lower(parentName) or ""
+        if string.find(pl,"level",1,true) or string.find(pl,"lvl",1,true) or string.find(pl,"rank",1,true) then hint=true end
+        if string.find(low,"level",1,true) or string.find(low,"lvl",1,true) or string.match(low,"^%s*lv%.?%s*%d") then hint=true end
+        if not hint and not string.match(low,"^%s*[%d,]+%s*$") then return end
+        local n=Impl.parseNumberLoose(raw)
+        if n and n>=1 and n<=1e9 then
+            if not best or n>best then best=math.floor(n) end
+        end
+    end
+    for _,d in ipairs(pg:GetDescendants()) do
+        scanned=scanned+1
+        if scanned>maxScan then break end
+        if d:IsA("TextLabel") or d:IsA("TextButton") then
+            local p=d.Parent and d.Parent.Name or ""
+            consider(d.Text,p)
+        end
+    end
+    return best
+end
+
 function Impl.readLevelFromLeaderstats()
     local ls=lp:FindFirstChild("leaderstats")
+    if not ls then
+        pcall(function()
+            ls=lp:WaitForChild("leaderstats",0.35)
+        end)
+    end
     if not ls then return nil end
-    local tryNames={"Level","Lvl","LV","LEVEL","level","Rank"}
+    local function valNumber(v)
+        if not v then return nil end
+        local ok,val=pcall(function() return v.Value end)
+        if not ok then return nil end
+        return tonumber(val)
+    end
+    local tryNames={"Level","Lvl","LV","Lv","LEVEL","LevelValue","CombatLevel","PlayerLevel","rank","Rank"}
     for _,nm in ipairs(tryNames) do
         local v=ls:FindFirstChild(nm)
-        if v and (v:IsA("IntValue") or v:IsA("NumberValue") or v:IsA("StringValue")) then
-            local n=tonumber(v.Value)
+        if v and (v:IsA("IntValue") or v:IsA("NumberValue") or v:IsA("StringValue") or v:IsA("DoubleConstrainedValue")) then
+            local n=valNumber(v)
             if n and n>=1 and n<=1e9 then return math.floor(n) end
         end
     end
     for _,ch in ipairs(ls:GetChildren()) do
-        if ch:IsA("IntValue") or ch:IsA("NumberValue") then
+        if ch:IsA("IntValue") or ch:IsA("NumberValue") or ch:IsA("DoubleConstrainedValue") or ch:IsA("StringValue") then
             local ln=string.lower(ch.Name)
-            if string.find(ln,"level",1,true) or ln=="lvl" or ln=="lv" then
-                local n=tonumber(ch.Value)
-                if n and n>=1 then return math.floor(n) end
+            if string.find(ln,"level",1,true) or ln=="lvl" or ln=="lv" or string.find(ln,"rank",1,true) then
+                local n=valNumber(ch)
+                if n and n>=1 and n<=1e9 then return math.floor(n) end
             end
         end
     end
@@ -1588,7 +1645,15 @@ function Impl.readLevelFromLeaderstats()
 end
 
 function Impl.readLevelForAutoProgress()
-    return Impl.readLevelFromHud() or Impl.readLevelFromLeaderstats()
+    local a=lp:GetAttribute("Level")
+    if typeof(a)=="number" and a>=1 and a<=1e9 then return math.floor(a) end
+    if typeof(a)=="string" then
+        local n=tonumber(a)
+        if n and n>=1 and n<=1e9 then return math.floor(n) end
+    end
+    return Impl.readLevelFromHud()
+        or Impl.readLevelFromLeaderstats()
+        or Impl.readLevelFromPlayerGuiDeepScan()
 end
 
 function Impl.swordTierFromUiName(name)
@@ -1737,12 +1802,36 @@ function Impl.tryEquipCombatViaRemote()
     end)
 end
 
-function Impl.tryAuxWeaponRemotesAfterEquip()
+function Impl.tryAuxWeaponRemotesAfterEquip(tool)
     pcall(function()
         local rem=game:GetService("ReplicatedStorage"):FindFirstChild("Remotes")
         if not rem then return end
         local u=rem:FindFirstChild("UpdateEquipped")
-        if u and u:IsA("RemoteEvent") then u:FireServer() end
+        if u and u:IsA("RemoteEvent") then
+            u:FireServer()
+            if tool then u:FireServer(tool.Name) end
+        end
+    end)
+end
+
+-- У части сборок Sword экипается только после UseItem / аналога.
+function Impl.tryUseItemRemoteForTool(tool)
+    if not tool then return end
+    pcall(function()
+        local rs=game:GetService("ReplicatedStorage")
+        local rem=rs:FindFirstChild("Remotes")
+        for _,nm in ipairs({"UseItem","ItemUse","UseTool","EquipItem"}) do
+            local ev=rem and rem:FindFirstChild(nm)
+            if not ev then ev=rs:FindFirstChild(nm,true) end
+            if ev and ev:IsA("RemoteEvent") then
+                ev:FireServer(tool)
+                ev:FireServer(tool.Name)
+                ev:FireServer("Equip",tool.Name)
+            elseif ev and ev:IsA("RemoteFunction") then
+                ev:InvokeServer(tool)
+                ev:InvokeServer(tool.Name)
+            end
+        end
     end)
 end
 
@@ -1821,7 +1910,8 @@ function Impl.applySwordEquipPhases(tool,wantTierMin)
         if not hum or hum.Health<=0 then return false end
         pcall(function() hum:EquipTool(tool) end)
         task.wait(0.14)
-        Impl.tryAuxWeaponRemotesAfterEquip()
+        Impl.tryUseItemRemoteForTool(tool)
+        Impl.tryAuxWeaponRemotesAfterEquip(tool)
         Impl.trySwordEquipRemote(tool)
         task.wait(0.1)
         return Impl.characterHasSwordEquipped(wantTierMin)
