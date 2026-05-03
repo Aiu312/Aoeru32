@@ -1,4 +1,4 @@
--- Sailor Piece Hub | v48
+-- Sailor Piece Hub | v49
 -- Rayfield через HttpGet; хаб использует Luau (continue). Если всё серым — см. Developer Console F9.
 --
 -- ► Лоадер с GitHub: при необходимости подставь raw URL ниже только в ЛОКАЛЬНОЙ копии или в маленьком лоадере.
@@ -1913,9 +1913,23 @@ function Impl.getOwnedSwordTier()
         end
         walk(container)
     end
+    local function scanToolsDeep(container)
+        if not container then return end
+        pcall(function()
+            for _,t in ipairs(container:GetDescendants()) do
+                if t:IsA("Tool") then
+                    local tr=Impl.toolSwordTier(t)
+                    if tr>0 then best=math.max(best,tr) end
+                end
+            end
+        end)
+    end
     scanTools(lp:FindFirstChild("Backpack"))
     scanTools(lp.Character)
     scanTools(lp:FindFirstChild("StarterGear"))
+    scanToolsDeep(lp:FindFirstChild("Backpack"))
+    scanToolsDeep(lp.Character)
+    scanToolsDeep(lp:FindFirstChild("StarterGear"))
     best=Impl.mergeSwordTierFromAllInventoryUi(best)
     return best
 end
@@ -1987,6 +2001,39 @@ function Impl.getSwordEquipRemote()
     r=rs:FindFirstChild("EquipWeapon",true)
     if r and (r:IsA("RemoteEvent") or r:IsA("RemoteFunction")) then return r end
     return nil
+end
+
+-- Клиент Sailor Piece: перед экипом часто нужен синк (видно в Cobalt как RequestInventory).
+function Impl.tryRequestInventoryRemote()
+    pcall(function()
+        local rs=game:GetService("ReplicatedStorage")
+        local rem=rs:FindFirstChild("Remotes")
+        local rq=rem and (rem:FindFirstChild("RequestInventory") or rem:FindFirstChild("RequestInventory",true))
+        if not rq then rq=rs:FindFirstChild("RequestInventory",true) end
+        if rq and rq:IsA("RemoteEvent") then rq:FireServer()
+        elseif rq and rq:IsA("RemoteFunction") then pcall(function() rq:InvokeServer() end) end
+    end)
+end
+
+-- Точный паттерн из Cobalt: Remotes.EquipWeapon:FireServer("Equip","Katana") — меч переходит Backpack → Character.
+function Impl.tryGameEquipWeaponByName(weaponName,wantTierMin,maxAttempts)
+    if not weaponName or weaponName=="" then return false end
+    wantTierMin=wantTierMin or 1
+    maxAttempts=maxAttempts or 10
+    if Impl.characterHasSwordEquipped(wantTierMin) then return true end
+    Impl.tryRequestInventoryRemote()
+    task.wait(0.09)
+    local r=Impl.getSwordEquipRemote()
+    if not r then return false end
+    for _=1,maxAttempts do
+        pcall(function()
+            if r:IsA("RemoteEvent") then r:FireServer("Equip",weaponName)
+            elseif r:IsA("RemoteFunction") then r:InvokeServer("Equip",weaponName) end
+        end)
+        task.wait(0.068)
+        if Impl.characterHasSwordEquipped(wantTierMin) then return true end
+    end
+    return Impl.characterHasSwordEquipped(wantTierMin)
 end
 
 -- Sailor-style: "Combat" через ремоут; мечи часто требуют несколько вызовов EquipWeapon + клиентский EquipTool + UpdateEquipped (см. Remotes.UpdateEquipped в игре).
@@ -2089,8 +2136,7 @@ function Impl.resetHandsForSwordEquip()
     task.wait(0.1)
 end
 
--- Сначала без сброса рук; агрессивные фазы (Cleanup / Combat+Unequip) только при options.aggressive~=false
--- Периодический auto progress вызывает с aggressive=false, чтобы не снимать меч с рук игрока.
+-- Сначала RequestInventory + FireServer("Equip", tool.Name) (как Cobalt), затем клиентский EquipTool; при сбое — aggressive-фазы.
 function Impl.applySwordEquipPhases(tool,wantTierMin,options)
     wantTierMin=wantTierMin or 1
     options=options or {}
@@ -2100,6 +2146,9 @@ function Impl.applySwordEquipPhases(tool,wantTierMin,options)
         local char=lp.Character
         local hum=char and char:FindFirstChildOfClass("Humanoid")
         if not hum or hum.Health<=0 then return false end
+        Impl.tryRequestInventoryRemote()
+        task.wait(0.05)
+        if Impl.tryGameEquipWeaponByName(tool.Name,wantTierMin,4) then return true end
         Impl.moveSwordToolToBackpack(tool)
         hum=char:FindFirstChildOfClass("Humanoid")
         if not hum then return false end
@@ -2134,21 +2183,35 @@ end
 
 function Impl.collectSwordToolsFromBackpack()
     local bp=lp:FindFirstChild("Backpack")
-    if not bp then return {} end
     local rows={}
+    local seen={}
+    local function addTool(t)
+        if seen[t] then return end
+        local tr=Impl.toolSwordTier(t)
+        if tr<=0 then return end
+        seen[t]=true
+        rows[#rows+1]={tool=t,tier=tr}
+    end
     local function walk(inst)
+        if not inst then return end
         for _,t in ipairs(inst:GetChildren()) do
-            if t:IsA("Tool") then
-                local tr=Impl.toolSwordTier(t)
-                if tr>0 then rows[#rows+1]={tool=t,tier=tr} end
-            elseif t:IsA("Folder") or t:IsA("Model") then
-                walk(t)
-            end
+            if t:IsA("Tool") then addTool(t)
+            elseif t:IsA("Folder") or t:IsA("Model") then walk(t) end
         end
     end
-    walk(bp)
+    if bp then
+        walk(bp)
+        pcall(function()
+            for _,t in ipairs(bp:GetDescendants()) do if t:IsA("Tool") then addTool(t) end end
+        end)
+    end
     local sg=lp:FindFirstChild("StarterGear")
-    if sg then walk(sg) end
+    if sg then
+        walk(sg)
+        pcall(function()
+            for _,t in ipairs(sg:GetDescendants()) do if t:IsA("Tool") then addTool(t) end end
+        end)
+    end
     table.sort(rows,function(a,b) return a.tier>b.tier end)
     return rows
 end
@@ -2177,10 +2240,21 @@ function Impl.equipBestOwnedSword()
         local c=lp.Character
         char=c
         if not c then return end
-        for _,t in ipairs(c:GetChildren()) do considerTool(t) end
+        pcall(function()
+            for _,t in ipairs(c:GetDescendants()) do if t:IsA("Tool") then considerTool(t) end end
+        end)
         scanBp(lp:FindFirstChild("Backpack"))
+        pcall(function()
+            local bp=lp:FindFirstChild("Backpack")
+            if bp then for _,t in ipairs(bp:GetDescendants()) do if t:IsA("Tool") then considerTool(t) end end end
+        end)
         local sg=lp:FindFirstChild("StarterGear")
-        if sg then scanBp(sg) end
+        if sg then
+            scanBp(sg)
+            pcall(function()
+                for _,t in ipairs(sg:GetDescendants()) do if t:IsA("Tool") then considerTool(t) end end
+            end)
+        end
     end
     reloadFromWorld()
 
@@ -2202,13 +2276,14 @@ function Impl.equipBestOwnedSword()
     if not best or bestTier<=0 then return end
     if best.Parent==char then return end
     if bestTier<=equippedBest and equippedBest>=1 then return end
+    if Impl.tryGameEquipWeaponByName(best.Name,bestTier) then return end
     Impl.applySwordEquipPhases(best,1)
 end
 
 function Impl.characterHasSwordEquipped(minTier)
     local char=lp.Character
     if not char then return false end
-    for _,t in ipairs(char:GetChildren()) do
+    for _,t in ipairs(char:GetDescendants()) do
         if t:IsA("Tool") then
             local tr=Impl.toolSwordTier(t)
             if tr>=minTier then return true end
@@ -2235,6 +2310,7 @@ function Impl.equipSwordUntilEquippedOrTimeout(wantTier)
             end
             for _,row in ipairs(rows) do
                 if row.tier>=wantTier then
+                    if Impl.tryGameEquipWeaponByName(row.tool.Name,wantTier) then return end
                     Impl.applySwordEquipPhases(row.tool,wantTier)
                     if Impl.characterHasSwordEquipped(wantTier) then return end
                 end
@@ -2407,6 +2483,12 @@ function Impl.tryAutoBuySword()
     if coins==nil then return end
     gems=gems or 0
     local tier=Impl.getOwnedSwordTier()
+    if tier>=3 then return end
+    if tier==0 then
+        Impl.tryRequestInventoryRemote()
+        task.wait(0.1)
+        tier=Impl.getOwnedSwordTier()
+    end
     if tier>=3 then return end
     -- Закрытый инвентарь даёт слотам размер 0 — реже подглядываем I, чтобы не дёргать UI каждый тик.
     local tPeek=os.clock()
